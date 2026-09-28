@@ -51,7 +51,7 @@ interface Line {
               </div>
               <div class="col-md-3">
                 <label class="form-label fw-medium">Shipping cost</label>
-                <div class="input-group"><span class="input-group-text">{{ auth.currency() }}</span><input type="number" class="form-control" min="0" step="0.01" [(ngModel)]="shippingCost" /></div>
+                <div class="input-group"><span class="input-group-text">{{ auth.currencySymbol() }}</span><input type="number" class="form-control" min="0" step="0.01" [(ngModel)]="shippingCost" /></div>
               </div>
               <div class="col-12">
                 <label class="form-label fw-medium">Notes</label>
@@ -95,7 +95,7 @@ interface Line {
                   </td>
                   <td>
                     <div class="input-group input-group-sm">
-                      <span class="input-group-text">{{ auth.currency() }}</span>
+                      <span class="input-group-text">{{ auth.currencySymbol() }}</span>
                       <input type="number" class="form-control" min="0" step="0.01" [(ngModel)]="line.unitCost" />
                     </div>
                   </td>

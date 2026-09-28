@@ -6,12 +6,14 @@ import { firstValueFrom, forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ORDER_SOURCES, OrderType } from '../../core/enums';
-import { ApiItem, InventoryItemFull, LineModifier, MenuCategory, MenuItem, Order, Table } from '../../core/models';
+import { ApiItem, ApiList, InventoryItemFull,LineModifier, MenuCategory, MenuItem, Order, OrderItem, Table } from '../../core/models';
 import { LabelPipe, MoneyPipe } from '../../core/pipes';
 import { fromCents, toCents } from '../../core/format';
 import { StaffDirectoryService } from '../../core/staff-directory.service';
 import { ToastService } from '../../core/toast.service';
 import { ModalComponent } from '../../shared/modal.component';
+import { ConfirmService } from '../../core/confirm.service';
+import { PaymentDialogComponent } from '../orders/payment-dialog.component';
 
 interface CartLine {
   key: number;
@@ -55,7 +57,7 @@ const DIETARY_ICONS: Record<string, string> = {
 @Component({
   selector: 'app-pos',
   standalone: true,
-  imports: [NgFor, NgIf, NgClass, FormsModule, RouterLink, MoneyPipe, LabelPipe, ModalComponent],
+  imports: [NgFor, NgIf, NgClass, FormsModule, RouterLink, MoneyPipe, LabelPipe, ModalComponent, PaymentDialogComponent],
   templateUrl: './pos.component.html',
   styleUrls: ['./pos.component.scss'],
 })
@@ -65,7 +67,47 @@ export class PosComponent implements OnInit {
   private toast = inject(ToastService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private confirm = inject(ConfirmService);
   directory = inject(StaffDirectoryService);
+
+  readonly defaultOrderWidth = 400;
+  /** Width of the order panel in px; the user can drag its left edge and the choice is remembered. */
+  readonly orderWidth = signal(this.readOrderWidth());
+
+  private readOrderWidth(): number {
+    try {
+      const n = Number(localStorage.getItem('pos.orderWidth'));
+      return n >= 300 && n <= 700 ? n : 400;
+    } catch {
+      return 400;
+    }
+  }
+
+  saveOrderWidth(): void {
+    try {
+      localStorage.setItem('pos.orderWidth', String(this.orderWidth()));
+    } catch {
+      /* storage unavailable: width just isn't remembered */
+    }
+  }
+
+  startResize(ev: PointerEvent): void {
+    ev.preventDefault();
+    const startX = ev.clientX;
+    const startW = this.orderWidth();
+    const move = (e: PointerEvent) => this.orderWidth.set(Math.max(300, Math.min(700, Math.round(startW + (startX - e.clientX)))));
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      this.saveOrderWidth();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  }
+
+  showPayment = false;
+  completing = false;
+  changingWaiter = false;
 
   readonly loading = signal(true);
   readonly categories = signal<MenuCategory[]>([]);
@@ -75,7 +117,12 @@ export class PosComponent implements OnInit {
   /** When set, the cart is added to this existing order instead of creating a new one. */
   readonly existingOrder = signal<Order | null>(null);
 
-  readonly activeCategory = signal<string>('all');
+  /** Categories currently shown; empty means "All". Several can be picked at once. */
+  readonly selectedCategories = signal<string[]>([]);
+
+  toggleCategory(id: string): void {
+    this.selectedCategories.update((list) => (list.includes(id) ? list.filter((c) => c !== id) : [...list, id]));
+  }
   readonly search = signal('');
   readonly cart = signal<CartLine[]>([]);
   private nextKey = 1;
@@ -96,7 +143,7 @@ export class PosComponent implements OnInit {
   orderNotes = '';
   submitting: 'save' | 'send' | null = null;
 
-  readonly sources = ORDER_SOURCES;
+  readonly sources = ORDER_SOURCES.filter((s) => s !== 'qr');
   readonly fromCents = fromCents;
   readonly orderTypes: { value: OrderType; label: string; icon: string }[] = [
     { value: 'dine_in', label: 'Dine in', icon: 'bi-cup-hot' },
@@ -105,11 +152,11 @@ export class PosComponent implements OnInit {
   ];
 
   readonly visibleItems = computed(() => {
-    const cat = this.activeCategory();
+    const cats = this.selectedCategories();
     const q = this.search().trim().toLowerCase();
     return this.items().filter(
       (i) =>
-        (cat === 'all' || i.categoryId === cat) &&
+        (!cats.length || cats.includes(i.categoryId)) &&
         (!q || i.name.toLowerCase().includes(q) || (i.sku ?? '').toLowerCase().includes(q))
     );
   });
@@ -117,6 +164,40 @@ export class PosComponent implements OnInit {
   readonly freeTables = computed(() =>
     this.tables().filter((t) => t.isActive && !t.currentOrderId && (t.status === 'available' || t.status === 'reserved'))
   );
+
+  readonly existingLines = computed(() => (this.existingOrder()?.items ?? []).filter((l) => l.status !== 'cancelled'));
+
+  /** The whole bill: everything already on the running order plus what is in the cart. */
+  readonly bill = computed(() => {
+    const eo = this.existingOrder();
+    const t = this.totals();
+    return {
+      items: (eo?.subtotal ?? 0) + t.subtotal,
+      discount: (eo?.discountTotal ?? 0) + t.discount,
+      tax: (eo?.taxTotal ?? 0) + t.tax,
+      service: (eo?.serviceCharge ?? 0) + t.service,
+      total: (eo?.grandTotal ?? 0) + t.total,
+    };
+  });
+
+  /** Ids of open orders that still owe money; a fully paid order no longer counts as "running". */
+  private readonly unpaidOrderIds = signal<Set<string>>(new Set());
+
+  readonly runningTables = computed(() =>
+    this.tables().filter((t) => t.isActive && !!t.currentOrderId && this.unpaidOrderIds().has(t.currentOrderId))
+  );
+
+  private loadRunningOrders(): void {
+    forkJoin(['open', 'in_progress', 'ready', 'served'].map((status) => this.api.get<ApiList<Order>>('/orders', { status, limit: 100 }))).subscribe({
+      next: (groups) =>
+        this.unpaidOrderIds.set(new Set(groups.flatMap((g) => g.data).filter((o) => o.paymentStatus !== 'paid').map((o) => o.id))),
+    });
+  }
+
+  private reloadTables(): void {
+    this.api.getAll<Table>('/tables', { isActive: true }).subscribe((t) => this.tables.set(t));
+    this.loadRunningOrders();
+  }
 
   readonly itemCount = computed(() => this.cart().reduce((n, l) => n + l.quantity, 0));
 
@@ -166,6 +247,7 @@ export class PosComponent implements OnInit {
         this.categories.set(categories);
         this.items.set(items);
         this.tables.set(tables);
+        this.loadRunningOrders();
         this.invItems.set(invItems);
         if (tableId && this.freeTables().some((t) => t.id === tableId)) {
           this.orderType = 'dine_in';
@@ -179,23 +261,170 @@ export class PosComponent implements OnInit {
       },
     });
 
-    if (orderId) {
-      this.api.get<ApiItem<Order>>(`/orders/${orderId}`).subscribe({
-        next: (res) => {
-          if (['completed', 'cancelled'].includes(res.data.status)) {
-            this.toast.error(`Order ${res.data.orderNumber} is ${res.data.status} and can't be changed.`);
-            this.router.navigate(['/orders', orderId]);
-            return;
-          }
-          this.existingOrder.set(res.data);
-        },
-        error: (err) => this.toast.apiError(err, 'Order not found'),
-      });
+    if (orderId) this.loadExisting(orderId, true);
+  }
+
+  private loadExisting(orderId: string, leaveIfClosed: boolean): void {
+    this.api.get<ApiItem<Order>>(`/orders/${orderId}`).subscribe({
+      next: (res) => {
+        if (['completed', 'cancelled'].includes(res.data.status)) {
+          this.toast.error(`Order ${res.data.orderNumber} is ${res.data.status} and can't be changed.`);
+          if (leaveIfClosed) this.router.navigate(['/orders', orderId]);
+          else this.tableId = '';
+          return;
+        }
+        this.existingOrder.set(res.data);
+        this.orderDiscount.set(null);
+        this.discountDraft =res.data.orderDiscount ? fromCents(res.data.orderDiscount) : null;
+      },
+      error: (err) => {
+        this.toast.apiError(err, 'Order not found');
+        this.tableId = '';
+      },
+    });
+  }
+
+  canTill(): boolean {
+    return this.auth.hasRole('manager', 'cashier');
+  }
+
+  cancellingLine: string | null = null;
+
+  async cancelExistingLine(line: OrderItem): Promise<void> {
+    const eo = this.existingOrder();
+    if (!eo) return;
+    const result = await this.confirm.ask({
+      title: `Cancel ${line.quantity} × ${line.name}?`,
+      message: 'The line will be removed from the bill.',
+      confirmText: 'Cancel item',
+      tone: 'danger',
+      reason: { label: 'Reason', placeholder: 'e.g. Customer changed mind' },
+      checkbox: {
+        label: 'Return ingredients to stock',
+        hint: 'Untick if the dish was already made and thrown away.',
+        checked: line.status === 'pending' || line.status === 'sent',
+      },
+    });
+    if (!result) return;
+    this.cancellingLine = line.id;
+    try {
+      await firstValueFrom(
+        this.api.post(`/orders/${eo.id}/items/${line.id}/cancel`, { reason: result.reason || undefined, returnToStock: result.checked })
+      );
+      this.toast.success(`${line.name} cancelled`);
+      this.loadExisting(eo.id, false);
+    } catch (err) {
+      this.toast.apiError(err);
+    } finally {
+      this.cancellingLine = null;
     }
   }
 
-  /** Picking a table selects its assigned waiter (still changeable). */
+  async changeWaiter(waiterId: string): Promise<void> {
+    const eo = this.existingOrder();
+    if (!eo || !waiterId || waiterId === this.directory.waiterOf(eo)) return;
+    this.changingWaiter = true;
+    try {
+      await firstValueFrom(this.api.patch(`/orders/${eo.id}/waiter`, { waiterId }));
+      this.toast.success(`Waiter changed to ${this.directory.name(waiterId)}`);
+      this.loadExisting(eo.id, false);
+    } catch (err) {
+      this.toast.apiError(err);
+    } finally {
+      this.changingWaiter = false;
+    }
+  }
+
+  /** Discount typed for the running order (currency); applied to the whole order on the server. */
+  discountDraft: number | null = null;
+  applyingDiscount = false;
+
+  discountChanged(): boolean {
+    const eo = this.existingOrder();
+    return !!eo && toCents(this.discountDraft) !== (eo.orderDiscount ?? 0);
+  }
+
+  async applyOrderDiscount(): Promise<void> {
+    const eo = this.existingOrder();
+    if (!eo || !this.discountChanged()) return;
+    // The server refuses a discount above the order total, so cap it here instead of failing.
+    const room = Math.max(0, eo.subtotal - (eo.discountTotal - (eo.orderDiscount ?? 0)));
+    const wanted = toCents(this.discountDraft);
+    const amount = Math.min(wanted, room);
+    if (amount < wanted) {
+      this.discountDraft = fromCents(amount);
+      this.toast.info(`Discount limited to the order total (${(this.discountDraft ?? 0).toFixed(2)})`);
+    }
+    if (amount === (eo.orderDiscount ?? 0)) return;
+    this.applyingDiscount = true;
+    try {
+      await firstValueFrom(this.api.patch(`/orders/${eo.id}/discount`, { amount }));
+      this.toast.success(amount ? 'Discount applied' : 'Discount removed');
+      this.loadExisting(eo.id, false);
+    } catch (err) {
+      this.toast.apiError(err);
+    } finally {
+      this.applyingDiscount = false;
+    }
+  }
+
+  async onPaid(order: Order): Promise<void> {
+    this.showPayment = false;
+    this.toast.success('Payment recorded');
+    if ((order.balanceDue ?? 0) > 0) {
+      this.loadExisting(order.id, false);
+      this.loadRunningOrders();
+      return;
+    }
+    // Fully paid: close the order so its table is free for the next guests.
+    try {
+      if (order.items.some((i) => i.status === 'pending')) await firstValueFrom(this.api.post(`/orders/${order.id}/send`));
+      await firstValueFrom(this.api.post<ApiItem<Order>>(`/orders/${order.id}/complete`));
+      this.toast.success(`${order.orderNumber} paid and closed`, 'The table is ready for a new order.');
+      this.startNewOrder();
+      this.reloadTables();
+    } catch (err) {
+      this.toast.apiError(err);
+      this.loadExisting(order.id, false);
+    }
+  }
+
+  async completeOrder(): Promise<void> {
+    const eo = this.existingOrder();
+    if (!eo) return;
+    const result = await this.confirm.ask({
+      title: 'Close this order?',
+      message: 'The bill is fully paid. Completing it closes the ticket and frees the table.',
+      confirmText: 'Complete order',
+    });
+    if (!result) return;
+    this.completing = true;
+    try {
+      const res = await firstValueFrom(this.api.post<ApiItem<Order>>(`/orders/${eo.id}/complete`));
+      this.toast.success(`${res.data.orderNumber} completed`);
+      this.startNewOrder();
+      this.reloadTables();
+    } catch (err) {
+      this.toast.apiError(err);
+    } finally {
+      this.completing = false;
+    }
+  }
+
+  /** Back from a running order to a brand-new one (the cart is kept). */
+  startNewOrder(): void {
+    this.existingOrder.set(null);
+    this.tableId = '';
+  }
+
+  /** Picking a table selects its assigned waiter (still changeable); a table with a running order opens that order. */
   onTableChange(tableId: string): void {
+    const running = this.tables().find((t) => t.id === tableId)?.currentOrderId;
+    if (running) {
+      this.tableId = tableId;
+      this.loadExisting(running, false);
+      return;
+    }
     this.tableId = tableId;
     const assigned = this.tables().find((t) => t.id === tableId)?.assignedWaiterId;
     if (assigned) this.waiterId = assigned;
@@ -273,9 +502,36 @@ export class PosComponent implements OnInit {
     return (line.item.price + this.modifierDelta(line)) * line.quantity;
   }
 
-  /** Line discount in cents, never more than the line subtotal. */
-  discountCents(line: CartLine): number {
+  private ownDiscount(line: CartLine): number {
     return Math.max(0, Math.min(toCents(line.discount), this.lineGross(line)));
+  }
+
+  /** Whole-order discount (currency) typed in the totals; spread over the new lines by value when sending. */
+  readonly orderDiscount = signal<number | null>(null);
+
+  private readonly orderShares = computed(() => {
+    const lines = this.cart();
+    const bases = lines.map((l) => this.lineGross(l) - this.ownDiscount(l));
+    const total = bases.reduce((s, b) => s + b, 0);
+    const wanted = Math.max(0, Math.min(toCents(this.orderDiscount()), total));
+    const shares = new Map<number, number>();
+    if (!wanted || !total) return shares;
+    let given = 0;
+    let last = -1;
+    lines.forEach((l, i) => {
+      if (bases[i] > 0) last = i;
+    });
+    lines.forEach((l, i) => {
+      const share = i === last ? wanted - given : Math.floor((wanted * bases[i]) / total);
+      shares.set(l.key, share);
+      given += share;
+    });
+    return shares;
+  });
+
+  /** Line discount in cents (own discount plus its share of the order discount), never more than the line subtotal. */
+  discountCents(line: CartLine): number {
+    return Math.min(this.ownDiscount(line) + (this.orderShares().get(line.key) ?? 0), this.lineGross(line));
   }
 
   remove(line: CartLine): void {
@@ -283,6 +539,7 @@ export class PosComponent implements OnInit {
   }
 
   clear(): void {
+    this.orderDiscount.set(null);
     this.cart.set([]);
   }
 
@@ -351,6 +608,10 @@ export class PosComponent implements OnInit {
 
   resetRow(r: RecipeAdjust): void {
     r.desiredQty = r.baseQty;
+  }
+
+  removeRow(r: RecipeAdjust): void {
+    r.desiredQty = 0;
   }
 
   addExtraRow(): void {
@@ -466,8 +727,11 @@ export class PosComponent implements OnInit {
       } else {
         this.toast.success(existing ? `Items added to ${order.orderNumber}` : `${order.orderNumber} saved`);
       }
+      this.orderDiscount.set(null);
       this.cart.set([]);
-      await this.router.navigate(['/orders', order.id]);
+      // Stay on the POS: the order (new or existing) now shows as the running order with its items.
+      this.loadExisting(order.id, false);
+      this.reloadTables();
     } catch (err) {
       this.toast.apiError(err, 'Could not save the order');
     } finally {

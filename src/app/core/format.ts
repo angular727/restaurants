@@ -1,11 +1,7 @@
-/** Integer cents → "$14.50" in the restaurant's currency. */
-export function formatMoney(cents: number | null | undefined, currency: string, locale: string): string {
+/** Integer minor units → "Rs 14.50" in the restaurant's currency. */
+export function formatMoney(cents: number | null | undefined, _currency?: string, _locale?: string): string {
   const value = (cents ?? 0) / 100;
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value);
-  } catch {
-    return `${currency} ${value.toFixed(2)}`;
-  }
+  return new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
 /** A user-typed amount ("14.5") → integer cents (1450). */

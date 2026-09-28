@@ -277,7 +277,7 @@
   <div class="mb-3" *ngIf="adjustType === 'opening_balance'">
     <label class="form-label fw-medium">Cost per {{ adjustItem?.unit }} <span class="text-muted fw-normal">(optional)</span></label>
     <div class="input-group">
-      <span class="input-group-text">{{ auth.currency() }}</span>
+      <span class="input-group-text">{{ auth.currencySymbol() }}</span>
       <input type="number" class="form-control" min="0" step="any" [(ngModel)]="adjustUnitCost" />
     </div>
     <div class="text-muted text-xs mt-1">Sets the average cost used for food costing.</div>

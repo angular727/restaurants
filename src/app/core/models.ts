@@ -143,6 +143,8 @@ export interface Order {
   currency: string;
   subtotal: Cents;
   discountTotal: Cents;
+  /** Whole-order discount set at the till (already included in discountTotal). */
+  orderDiscount?: Cents;
   taxTotal: Cents;
   serviceCharge: Cents;
   grandTotal: Cents;

@@ -20,7 +20,7 @@ import { ModalComponent } from './modal.component';
       <div class="mb-3">
         <label class="form-label fw-medium">Refund amount</label>
         <div class="input-group">
-          <span class="input-group-text">{{ payment?.currency }}</span>
+          <span class="input-group-text">PKR</span>
           <input type="number" class="form-control tabular" min="0.01" step="0.01" [max]="maxAmount()" [(ngModel)]="amount" />
         </div>
         <div class="text-muted text-xs mt-1">Up to {{ money(refundable) }} can still be refunded on this payment.</div>

@@ -136,7 +136,7 @@ const STEPS = ['draft', 'submitted', 'partially_received', 'received'];
                 </td>
                 <td>
                   <div class="input-group input-group-sm">
-                    <span class="input-group-text">{{ auth.currency() }}</span>
+                    <span class="input-group-text">{{ auth.currencySymbol() }}</span>
                     <input type="number" class="form-control" min="0" step="0.01" [(ngModel)]="r.unitCost" />
                   </div>
                 </td>

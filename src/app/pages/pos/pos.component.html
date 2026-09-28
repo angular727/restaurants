@@ -1,4 +1,4 @@
-<div class="pos">
+<div class="pos" [style.--order-w]="orderWidth() + 'px'">
   <!-- Menu -->
   <section class="pos-menu">
     <div class="menu-toolbar">
@@ -15,15 +15,15 @@
     </div>
 
     <div class="category-bar">
-      <button type="button" class="cat-chip" [class.active]="activeCategory() === 'all'" (click)="activeCategory.set('all')">
+      <button type="button" class="cat-chip" [class.active]="!selectedCategories().length" (click)="selectedCategories.set([])">
         All <span class="count">{{ countInCategory('all') }}</span>
       </button>
       <button
         type="button"
         *ngFor="let c of categories(); trackBy: trackById"
         class="cat-chip"
-        [class.active]="activeCategory() === c.id"
-        (click)="activeCategory.set(c.id)"
+        [class.active]="selectedCategories().includes(c.id)"
+        (click)="toggleCategory(c.id)"
       >
         {{ c.name }} <span class="count">{{ countInCategory(c.id) }}</span>
       </button>
@@ -80,6 +80,12 @@
 
   <!-- Order panel -->
   <aside class="pos-order card">
+    <div
+      class="resize-handle"
+      title="Drag to resize · double-click to reset"
+      (pointerdown)="startResize($event)"
+      (dblclick)="orderWidth.set(defaultOrderWidth); saveOrderWidth()"
+    ></div>
     <div class="order-head">
       <ng-container *ngIf="existingOrder() as o; else newOrderHead">
         <div class="d-flex align-items-center justify-content-between gap-2">
@@ -89,9 +95,24 @@
               {{ o.orderNumber }}
               <span *ngIf="existingTableName()" class="text-muted fw-normal"> · Table {{ existingTableName() }}</span>
             </div>
-            <div class="text-muted text-xs"><i class="bi bi-person me-1"></i>Waiter {{ directory.name(directory.waiterOf(o)) }}</div>
+            <div *ngIf="!canTill()" class="text-muted text-xs"><i class="bi bi-person me-1"></i>Waiter {{ directory.name(directory.waiterOf(o)) }}</div>
+            <div *ngIf="canTill()" class="d-flex align-items-center gap-1 mt-1">
+              <i class="bi bi-person text-muted"></i>
+              <select
+                class="form-select form-select-sm py-0"
+                [disabled]="changingWaiter"
+                [ngModel]="directory.waiterOf(o)"
+                (ngModelChange)="changeWaiter($event)"
+                aria-label="Waiter"
+              >
+                <option *ngFor="let s of directory.servers()" [value]="s.userId">{{ s.name }}</option>
+              </select>
+            </div>
           </div>
-          <a [routerLink]="['/orders', o.id]" class="btn btn-sm btn-light border">View order</a>
+          <div class="d-flex flex-column gap-1 text-nowrap">
+            <a [routerLink]="['/orders', o.id]" class="btn btn-sm btn-light border">View order / Payment</a>
+            <button type="button" class="btn btn-sm btn-link p-0" (click)="startNewOrder()">Start a new order</button>
+          </div>
         </div>
       </ng-container>
 
@@ -125,6 +146,11 @@
               <option *ngFor="let t of freeTables(); trackBy: trackById" [value]="t.id">
                 {{ t.name }} · {{ t.section }} · {{ t.capacity }} seats{{ t.status === 'reserved' ? ' (reserved)' : '' }}{{ tableWaiterName(t) }}
               </option>
+              <optgroup label="Running orders" *ngIf="runningTables().length">
+                <option *ngFor="let t of runningTables(); trackBy: trackById" [value]="t.id">
+                  {{ t.name }} · {{ t.section }} · order running
+                </option>
+              </optgroup>
             </select>
           </div>
           <div class="col-4">
@@ -172,9 +198,41 @@
 
     <!-- Cart -->
     <div class="order-lines">
-      <div *ngIf="!cart().length" class="empty-state">
-        <i class="bi bi-basket"></i>
-        <div class="fw-medium text-body">No items yet</div>
+      <ng-container *ngIf="existingLines().length">
+        <div class="existing-title">Already on this order</div>
+        <div class="line existing-line" *ngFor="let l of existingLines()">
+          <div class="d-flex align-items-start gap-2">
+            <div class="flex-grow-1 min-w-0">
+              <div class="fw-medium text-truncate">{{ l.quantity }} × {{ l.name }}</div>
+              <div class="text-muted text-xs">{{ l.status | label }}</div>
+              <div *ngIf="l.modifiers?.length" class="modifier-chips">
+                <span class="modifier-chip" *ngFor="let m of l.modifiers" [class.remove]="m.action === 'remove'">
+                  <i class="bi" [class.bi-dash-circle]="m.action === 'remove'" [class.bi-plus-circle]="m.action === 'add'"></i>
+                  {{ modifierLabel(m) }}
+                </span>
+              </div>
+            </div>
+            <div class="text-end">
+              <div class="fw-semibold tabular text-nowrap">{{ l.lineTotal | money }}</div>
+              <button
+                *ngIf="canTill()"
+                type="button"
+                class="btn btn-sm btn-link text-danger p-0"
+                [disabled]="cancellingLine === l.id"
+                title="Cancel this item"
+                (click)="cancelExistingLine(l)"
+              >
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="existing-title" *ngIf="cart().length">New items</div>
+      </ng-container>
+
+      <div *ngIf="!cart().length" class="empty-state" [class.py-3]="existingLines().length">
+        <i class="bi bi-basket" *ngIf="!existingLines().length"></i>
+        <div class="fw-medium text-body">{{ existingLines().length ? 'No new items' : 'No items yet' }}</div>
         <div class="text-xs">Tap a menu item to add it to the order.</div>
       </div>
 
@@ -228,7 +286,7 @@
           (ngModelChange)="setNotes(line, $event)"
         />
         <div *ngIf="line.showDiscount" class="input-group input-group-sm mt-2">
-          <span class="input-group-text">Discount {{ auth.currency() }}</span>
+          <span class="input-group-text">Discount {{ auth.currencySymbol() }}</span>
           <input
             type="number"
             class="form-control"
@@ -254,32 +312,118 @@
         placeholder="Order note (optional)"
       />
       <dl class="totals">
-        <div><dt>Subtotal · {{ itemCount() }} item{{ itemCount() === 1 ? '' : 's' }}</dt><dd>{{ totals().subtotal | money }}</dd></div>
-        <div *ngIf="totals().discount"><dt>Discounts</dt><dd class="text-success">−{{ totals().discount | money }}</dd></div>
-        <div><dt>Tax{{ auth.tenant()?.tax?.pricesIncludeTax ? ' (included)' : '' }}</dt><dd>{{ totals().tax | money }}</dd></div>
-        <div *ngIf="totals().service"><dt>Service charge</dt><dd>{{ totals().service | money }}</dd></div>
-        <div class="grand"><dt>Estimated total</dt><dd>{{ totals().total | money }}</dd></div>
+        <div>
+          <dt>Items total</dt>
+          <dd>{{ bill().items | money }}</dd>
+        </div>
+        <div class="align-items-center">
+          <dt>Discount</dt>
+          <dd class="d-flex align-items-center gap-2" *ngIf="!existingOrder(); else runningDiscount">
+            <span *ngIf="bill().discount" class="text-success">−{{ bill().discount | money }}</span>
+            <div class="input-group input-group-sm discount-input">
+              <span class="input-group-text">{{ auth.currencySymbol() }}</span>
+              <input
+                type="number"
+                class="form-control text-end"
+                min="0"
+                step="any"
+                placeholder="0"
+                [disabled]="!cart().length"
+                [ngModel]="orderDiscount()"
+                (ngModelChange)="orderDiscount.set($event)"
+                aria-label="Order discount"
+              />
+            </div>
+          </dd>
+          <ng-template #runningDiscount>
+            <dd class="d-flex align-items-center gap-2">
+              <span *ngIf="bill().discount" class="text-success">−{{ bill().discount | money }}</span>
+              <div class="input-group input-group-sm discount-input">
+                <span class="input-group-text">{{ auth.currencySymbol() }}</span>
+                <input
+                  type="number"
+                  class="form-control text-end"
+                  min="0"
+                  step="any"
+                  placeholder="0"
+                  [disabled]="!canTill() || applyingDiscount"
+                  [(ngModel)]="discountDraft"
+                  (keydown.enter)="applyOrderDiscount()"
+                  (change)="applyOrderDiscount()"
+                  aria-label="Order discount"
+                />
+                <button
+                  type="button"
+                  class="btn btn-outline-primary"
+                  [disabled]="!discountChanged() || applyingDiscount || !canTill()"
+                  title="Apply discount to this order"
+                  (click)="applyOrderDiscount()"
+                >
+                  <i class="bi bi-check-lg"></i>
+                </button>
+              </div>
+            </dd>
+          </ng-template>
+        </div>
+        <div *ngIf="bill().service" class="text-muted"><dt>Service charge</dt><dd>+{{ bill().service | money }}</dd></div>
+        <div class="grand" title="Every item on the order, less the discount. The server confirms the final amount when you save.">
+          <dt>Total</dt>
+          <dd>{{ bill().total | money }}</dd>
+        </div>
       </dl>
-      <div class="text-muted text-2xs mb-3">Final totals are calculated by the server when the order is saved.</div>
+
+      <div *ngIf="existingOrder() as eo" class="pay-box mb-2">
+        <div class="pay-figures">
+          <div class="text-xs text-muted">Paid <span class="tabular text-body">{{ eo.amountPaid | money }}</span></div>
+          <div class="fw-semibold">
+            Balance due
+            <span class="tabular" [class.text-danger]="(eo.balanceDue ?? 0) > 0" [class.text-success]="!((eo.balanceDue ?? 0) > 0)">{{ eo.balanceDue | money }}</span>
+          </div>
+        </div>
+        <ng-container *ngIf="canTill()">
+          <button *ngIf="(eo.balanceDue ?? 0) > 0" type="button" class="btn btn-sm btn-success text-nowrap" (click)="showPayment = true">
+            <i class="bi bi-credit-card me-1"></i>Take payment
+          </button>
+          <button
+            *ngIf="!((eo.balanceDue ?? 0) > 0) && eo.status !== 'open'"
+            type="button"
+            class="btn btn-sm btn-dark text-nowrap"
+            [disabled]="completing"
+            (click)="completeOrder()"
+          >
+            <span *ngIf="completing" class="spinner-border spinner-border-sm me-1"></span>
+            <i *ngIf="!completing" class="bi bi-check2-circle me-1"></i>Complete order
+          </button>
+        </ng-container>
+      </div>
 
       <div class="d-grid gap-2">
-        <button type="button" class="btn btn-primary btn-lg" [disabled]="!cart().length || !!submitting" (click)="submit(true)">
+        <button type="button" class="btn btn-primary" [disabled]="!cart().length || !!submitting" (click)="submit(true)">
           <span *ngIf="submitting === 'send'" class="spinner-border spinner-border-sm me-2"></span>
           <i *ngIf="submitting !== 'send'" class="bi bi-send me-2"></i>{{ existingOrder() ? 'Add & send to kitchen' : 'Send to kitchen' }}
         </button>
         <div class="d-flex gap-2">
-          <button type="button" class="btn btn-light border flex-grow-1" [disabled]="!cart().length || !!submitting" (click)="submit(false)">
+          <button *ngIf="!existingOrder()" type="button" class="btn btn-light border flex-grow-1" [disabled]="!cart().length || !!submitting" (click)="submit(false)">
             <span *ngIf="submitting === 'save'" class="spinner-border spinner-border-sm me-2"></span>
-            {{ existingOrder() ? 'Add items only' : 'Save as open order' }}
+            Save as open order
           </button>
-          <button type="button" class="btn btn-light border" [disabled]="!cart().length || !!submitting" (click)="clear()" title="Clear cart">
-            <i class="bi bi-x-lg"></i>
+          <button
+            type="button"
+            class="btn btn-light border"
+            [class.flex-grow-1]="!!existingOrder()"
+            [disabled]="!cart().length || !!submitting"
+            (click)="clear()"
+            title="Clear cart"
+          >
+            <i class="bi bi-x-lg"></i><span *ngIf="existingOrder()" class="ms-2">Clear new items</span>
           </button>
         </div>
       </div>
     </div>
   </aside>
 </div>
+
+<app-payment-dialog [open]="showPayment" [order]="existingOrder()" (closed)="showPayment = false" (paid)="onPaid($event)"></app-payment-dialog>
 
 <!-- Customize: per-line ingredient add/remove. The menu recipe itself is never changed. -->
 <app-modal
@@ -295,20 +439,36 @@
     <div class="text-muted text-xs mb-2" *ngIf="customizeRecipe.length">Set less (down to 0 for none) or more of anything already in this recipe.</div>
     <div class="customize-list" *ngIf="customizeRecipe.length; else noRecipe">
       <div class="adjust-row" *ngFor="let r of customizeRecipe">
-        <span class="adjust-name text-truncate" [class.text-muted]="r.desiredQty === r.baseQty">{{ r.name }}</span>
+        <span
+          class="adjust-name text-truncate"
+          [class.text-muted]="r.desiredQty === r.baseQty"
+          [class.removed]="!(r.desiredQty > 0)"
+          >{{ r.name }}</span
+        >
         <div class="input-group input-group-sm">
           <input type="number" class="form-control" min="0" step="any" [(ngModel)]="r.desiredQty" />
           <span class="input-group-text">{{ r.unit }}</span>
         </div>
-        <button
-          type="button"
-          class="btn btn-sm btn-link px-1"
-          [disabled]="r.desiredQty === r.baseQty"
-          [title]="'Reset to recipe amount (' + fq(r.baseQty) + ' ' + r.unit + ')'"
-          (click)="resetRow(r)"
-        >
-          <i class="bi bi-arrow-counterclockwise"></i>
-        </button>
+        <div class="d-flex align-items-center">
+          <button
+            type="button"
+            class="btn btn-sm btn-link text-danger px-1"
+            [disabled]="!(r.desiredQty > 0)"
+            title="Remove this ingredient from this order only"
+            (click)="removeRow(r)"
+          >
+            <i class="bi bi-x-circle"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-link px-1"
+            [disabled]="r.desiredQty === r.baseQty"
+            [title]="'Reset to recipe amount (' + fq(r.baseQty) + ' ' + r.unit + ')'"
+            (click)="resetRow(r)"
+          >
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
+        </div>
       </div>
     </div>
     <ng-template #noRecipe><div class="text-muted text-xs mb-2">This item has no listed ingredients.</div></ng-template>
@@ -328,7 +488,7 @@
         <span class="input-group-text">{{ invUnit(e.inventoryItemId) || 'unit' }}</span>
       </div>
       <div class="input-group input-group-sm">
-        <span class="input-group-text">{{ auth.currency() }}</span>
+        <span class="input-group-text">{{ auth.currencySymbol() }}</span>
         <input
           type="number"
           class="form-control"
@@ -340,13 +500,6 @@
         />
       </div>
       <button type="button" class="btn btn-sm btn-link text-danger px-1" (click)="removeExtraRow(i)" aria-label="Remove row"><i class="bi bi-x-lg"></i></button>
-    </div>
-
-    <div class="section-title">Quantity</div>
-    <div class="stepper mb-3">
-      <button type="button" (click)="incCustomizeQty(-1)" aria-label="Decrease"><i class="bi bi-dash"></i></button>
-      <span class="tabular">{{ customizeQty }}</span>
-      <button type="button" (click)="incCustomizeQty(1)" aria-label="Increase"><i class="bi bi-plus"></i></button>
     </div>
 
     <div class="customize-price">

@@ -41,9 +41,11 @@ export class AuthService {
   readonly role = computed<Role | null>(
     () => this.membership()?.role ?? this.restaurants().find((r) => r.tenantId === this.tenantId())?.role ?? null
   );
-  readonly currency = computed(() => this.tenant()?.currency ?? 'USD');
-  readonly locale = computed(() => this.tenant()?.locale ?? 'en-US');
-  readonly timezone = computed(() => this.tenant()?.timezone ?? 'UTC');
+  readonly currency = computed(() => 'PKR');
+  /** Short label for amount input boxes. */
+  readonly currencySymbol = computed(() => 'Rs');
+  readonly locale = computed(() => 'en-PK');
+  readonly timezone = computed(() => this.tenant()?.timezone ?? 'Asia/Karachi');
 
   login(email: string, password: string): Observable<User> {
     return this.api.post<LoginResponse>('/auth/login', { email, password }).pipe(

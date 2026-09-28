@@ -7,7 +7,7 @@ import { AuthService } from '../../core/auth.service';
 import { slugify } from '../../core/format';
 import { ApiError } from '../../core/models';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'PKR', 'INR', 'AED', 'SAR', 'CAD', 'AUD', 'SGD', 'MYR', 'TRY', 'ZAR'];
+const CURRENCIES = ['PKR'];
 
 @Component({
   selector: 'app-register',
@@ -108,8 +108,8 @@ export class RegisterComponent {
   restaurantName = '';
   slug = '';
   slugTouched = false;
-  currency = 'USD';
-  timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  currency = 'PKR';
+  timezone = 'Asia/Karachi';
   submitting = false;
   error: string | null = null;
 

@@ -3,7 +3,7 @@ import { AuthService } from './auth.service';
 import { enumLabel } from './enums';
 import { DateStyle, formatDate, formatMoney } from './format';
 
-/** {{ order.grandTotal | money }} → "$15.79" (input is cents). */
+/** {{ order.grandTotal | money }} → "Rs 15.79" (input is minor units). */
 @Pipe({ name: 'money', standalone: true, pure: false })
 export class MoneyPipe implements PipeTransform {
   private auth = inject(AuthService);

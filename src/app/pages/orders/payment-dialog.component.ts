@@ -42,7 +42,7 @@ const METHOD_ICONS: Record<PaymentMethod, string> = {
           <div class="col-sm-6">
             <label class="form-label fw-medium">Amount</label>
             <div class="input-group">
-              <span class="input-group-text">{{ order.currency }}</span>
+              <span class="input-group-text">Rs</span>
               <input type="number" class="form-control tabular" min="0.01" step="0.01" [(ngModel)]="amount" />
             </div>
             <div class="d-flex gap-1 mt-2">
@@ -54,7 +54,7 @@ const METHOD_ICONS: Record<PaymentMethod, string> = {
           <div class="col-sm-6">
             <label class="form-label fw-medium">Tip <span class="text-muted fw-normal">(optional)</span></label>
             <div class="input-group">
-              <span class="input-group-text">{{ order.currency }}</span>
+              <span class="input-group-text">Rs</span>
               <input type="number" class="form-control tabular" min="0" step="0.01" [(ngModel)]="tip" />
             </div>
           </div>
@@ -62,7 +62,7 @@ const METHOD_ICONS: Record<PaymentMethod, string> = {
           <div class="col-12" *ngIf="method === 'cash'">
             <label class="form-label fw-medium">Cash received</label>
             <div class="input-group">
-              <span class="input-group-text">{{ order.currency }}</span>
+              <span class="input-group-text">Rs</span>
               <input type="number" class="form-control tabular" min="0" step="0.01" [(ngModel)]="cashTendered" />
             </div>
             <div class="d-flex flex-wrap gap-1 mt-2">
