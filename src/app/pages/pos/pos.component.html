@@ -295,20 +295,36 @@
     <div class="text-muted text-xs mb-2" *ngIf="customizeRecipe.length">Set less (down to 0 for none) or more of anything already in this recipe.</div>
     <div class="customize-list" *ngIf="customizeRecipe.length; else noRecipe">
       <div class="adjust-row" *ngFor="let r of customizeRecipe">
-        <span class="adjust-name text-truncate" [class.text-muted]="r.desiredQty === r.baseQty">{{ r.name }}</span>
+        <span
+          class="adjust-name text-truncate"
+          [class.text-muted]="r.desiredQty === r.baseQty"
+          [class.removed]="!(r.desiredQty > 0)"
+          >{{ r.name }}</span
+        >
         <div class="input-group input-group-sm">
           <input type="number" class="form-control" min="0" step="any" [(ngModel)]="r.desiredQty" />
           <span class="input-group-text">{{ r.unit }}</span>
         </div>
-        <button
-          type="button"
-          class="btn btn-sm btn-link px-1"
-          [disabled]="r.desiredQty === r.baseQty"
-          [title]="'Reset to recipe amount (' + fq(r.baseQty) + ' ' + r.unit + ')'"
-          (click)="resetRow(r)"
-        >
-          <i class="bi bi-arrow-counterclockwise"></i>
-        </button>
+        <div class="d-flex align-items-center">
+          <button
+            type="button"
+            class="btn btn-sm btn-link text-danger px-1"
+            [disabled]="!(r.desiredQty > 0)"
+            title="Remove this ingredient from this order only"
+            (click)="removeRow(r)"
+          >
+            <i class="bi bi-x-circle"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-link px-1"
+            [disabled]="r.desiredQty === r.baseQty"
+            [title]="'Reset to recipe amount (' + fq(r.baseQty) + ' ' + r.unit + ')'"
+            (click)="resetRow(r)"
+          >
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
+        </div>
       </div>
     </div>
     <ng-template #noRecipe><div class="text-muted text-xs mb-2">This item has no listed ingredients.</div></ng-template>

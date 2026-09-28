@@ -353,6 +353,10 @@ export class PosComponent implements OnInit {
     r.desiredQty = r.baseQty;
   }
 
+  removeRow(r: RecipeAdjust): void {
+    r.desiredQty = 0;
+  }
+
   addExtraRow(): void {
     this.customizeExtras = [...this.customizeExtras, { inventoryItemId: '', quantity: 1, priceDelta: 0 }];
   }
