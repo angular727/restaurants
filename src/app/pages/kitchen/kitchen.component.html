@@ -1,0 +1,89 @@
+<div class="page-header">
+  <div>
+    <h1>Kitchen Display</h1>
+    <p>
+      Tickets in the order they were fired. Refreshes every 15 seconds.
+      <span *ngIf="lastUpdated() as t" class="text-xs">Last update {{ t | tzDate: 'time' }}</span>
+    </p>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <div class="kpi-chip"><span class="dot bg-info"></span>New <strong>{{ counts().sent }}</strong></div>
+    <div class="kpi-chip"><span class="dot bg-primary"></span>Preparing <strong>{{ counts().preparing }}</strong></div>
+    <div class="kpi-chip"><span class="dot bg-warning"></span>Ready <strong>{{ counts().ready }}</strong></div>
+    <button type="button" class="btn btn-light border" (click)="load()" [disabled]="loading()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+  </div>
+</div>
+
+<div class="nav-tabs-app" *ngIf="stations().length">
+  <button type="button" [class.active]="station() === 'all'" (click)="station.set('all')">All stations</button>
+  <button type="button" *ngFor="let s of stations()" [class.active]="station() === s" (click)="station.set(s)">
+    {{ s | label }}
+  </button>
+</div>
+
+<div *ngIf="loading()" class="kds-grid">
+  <span class="skeleton" style="height: 220px" *ngFor="let _ of [1, 2, 3, 4]"></span>
+</div>
+
+<div *ngIf="!loading() && !tickets().length" class="card">
+  <div class="empty-state py-5">
+    <i class="bi bi-check2-all text-success"></i>
+    <div class="fw-semibold text-body fs-6 mb-1">All caught up</div>
+    <div>No tickets waiting in the kitchen.</div>
+  </div>
+</div>
+
+<div class="kds-grid" *ngIf="!loading()">
+  <article class="ticket" *ngFor="let t of tickets(); trackBy: trackTicket" [ngClass]="'urgency-' + urgency(t)">
+    <header class="ticket-head">
+      <div>
+        <a [routerLink]="['/orders', t.order.id]" class="ticket-no">{{ t.order.orderNumber }}</a>
+        <div class="ticket-sub">
+          {{ t.order.type | label }}
+          <ng-container *ngIf="tableName(t.order) as tn"> · Table {{ tn }}</ng-container>
+          <ng-container *ngIf="!tableName(t.order) && t.order.customer?.name"> · {{ t.order.customer?.name }}</ng-container>
+        </div>
+        <div class="ticket-sub"><i class="bi bi-person me-1"></i>{{ directory.name(directory.waiterOf(t.order)) }}</div>
+      </div>
+      <div class="timer"><i class="bi bi-stopwatch"></i> {{ minutes(t) }}m</div>
+    </header>
+
+    <ul class="ticket-lines">
+      <li *ngFor="let line of t.lines; trackBy: trackLine" [ngClass]="'st-' + line.status">
+        <div class="line-main">
+          <span class="line-qty">{{ line.quantity }}×</span>
+          <div class="min-w-0 flex-grow-1">
+            <div class="line-name">{{ line.name }}</div>
+            <div *ngIf="line.modifiers?.length" class="modifier-chips">
+              <span class="modifier-chip" *ngFor="let m of line.modifiers" [class.remove]="m.action === 'remove'">
+                <i class="bi" [class.bi-dash-circle]="m.action === 'remove'" [class.bi-plus-circle]="m.action === 'add'"></i>
+                {{ (m.action === 'remove' ? '−' : '+') + m.quantity + ' ' + (m.unit ?? '') + ' ' + m.name }}
+              </span>
+            </div>
+            <div *ngIf="line.notes" class="line-note"><i class="bi bi-exclamation-diamond me-1"></i>{{ line.notes }}</div>
+            <div class="line-meta">
+              <span class="state">{{ line.status === 'sent' ? 'New' : (line.status | label) }}</span>
+              <span *ngIf="line.kitchenStation"> · {{ line.kitchenStation | label }}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm line-btn"
+            [ngClass]="line.status === 'sent' ? 'btn-outline-primary' : line.status === 'preparing' ? 'btn-warning' : 'btn-success'"
+            [disabled]="busyLine === line.id"
+            (click)="advance(t, line)"
+          >
+            <span *ngIf="busyLine === line.id" class="spinner-border spinner-border-sm"></span>
+            <ng-container *ngIf="busyLine !== line.id">{{ actionLabel(line) }}</ng-container>
+          </button>
+        </div>
+      </li>
+    </ul>
+
+    <footer class="ticket-foot">
+      <button *ngIf="hasStatus(t, 'sent') || hasStatus(t, 'preparing') || hasStatus(t, 'ready')" type="button" class="btn btn-sm btn-light border" (click)="bumpAll(t, 'served')">Mark all served</button>
+    </footer>
+  </article>
+</div>

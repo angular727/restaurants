@@ -1,0 +1,222 @@
+.status-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid var(--app-border);
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font-weight: 500;
+
+    strong {
+      color: #0f172a;
+    }
+
+    &.active {
+      border-color: #0f172a;
+      background: #0f172a;
+      color: #fff;
+
+      strong {
+        color: #fff;
+      }
+    }
+  }
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot-available { background: #15803d; }
+.dot-occupied { background: #2b59c3; }
+.dot-reserved { background: #b45309; }
+.dot-cleaning { background: #0e7490; }
+.dot-out_of_service { background: #94a3b8; }
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.875rem;
+}
+
+.table-card {
+  position: relative;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-left: 4px solid #15803d;
+  border-radius: 12px;
+  box-shadow: var(--app-shadow-sm);
+  transition: box-shadow 0.12s, border-color 0.12s;
+
+  &.clickable:hover {
+    box-shadow: 0 8px 22px -10px rgba(15, 23, 42, 0.3);
+  }
+
+  &.status-occupied {
+    border-left-color: #2b59c3;
+    background: linear-gradient(180deg, #f7f9fe, #fff 60%);
+  }
+  &.status-reserved { border-left-color: #b45309; }
+  &.status-cleaning { border-left-color: #0e7490; }
+  &.status-out_of_service { border-left-color: #94a3b8; }
+
+  &.inactive {
+    opacity: 0.6;
+    border-left-color: #cbd5e1;
+  }
+}
+
+.table-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.hint {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--bs-primary);
+}
+
+// ---- Floor plan -------------------------------------------------------------------
+.floor-scroll {
+  overflow: auto;
+  max-height: 70vh;
+}
+
+.floor-canvas {
+  position: relative;
+  min-width: 100%;
+  background-color: #fbfcfe;
+  background-image: radial-gradient(#d8dfea 1px, transparent 1px);
+  background-size: 20px 20px;
+
+  &.editing {
+    background-color: #f5f8fe;
+    background-image: linear-gradient(#e4eaf5 1px, transparent 1px), linear-gradient(90deg, #e4eaf5 1px, transparent 1px);
+    background-size: 10px 10px;
+
+    .floor-table {
+      cursor: grab;
+      touch-action: none;
+
+      &:active {
+        cursor: grabbing;
+        box-shadow: 0 12px 28px -10px rgba(15, 23, 42, 0.45);
+        z-index: 2;
+      }
+    }
+  }
+}
+
+.floor-table {
+  position: absolute;
+  width: 120px;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  background: #fff;
+  border: 2px solid #15803d;
+  border-radius: 14px;
+  box-shadow: var(--app-shadow-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: box-shadow 0.12s;
+
+  &.round {
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+  }
+
+  &:hover {
+    box-shadow: 0 8px 20px -10px rgba(15, 23, 42, 0.35);
+  }
+
+  &.status-occupied { border-color: #2b59c3; background: #f3f6fd; }
+  &.status-reserved { border-color: #b45309; background: #fffaf0; }
+  &.status-cleaning { border-color: #0e7490; }
+  &.status-out_of_service { border-color: #94a3b8; background: #f8fafc; }
+
+  &.inactive {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+}
+
+.ft-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.ft-seats {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.ft-status {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.table-waiter {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #334155;
+
+  &.unassigned {
+    color: #94a3b8;
+    font-weight: 400;
+  }
+}
+
+.ft-waiter {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2b59c3;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.assign-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 0;
+
+  & + .assign-row {
+    border-top: 1px solid var(--app-border);
+  }
+}

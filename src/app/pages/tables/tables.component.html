@@ -1,0 +1,226 @@
+<div class="page-header">
+  <div>
+    <h1>Tables</h1>
+    <p>Live floor plan. {{ seatsFree() }} seats free right now.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <div class="btn-group" role="group" aria-label="View">
+      <button type="button" class="btn btn-light border" [class.active]="view() === 'grid'" (click)="setView('grid')">
+        <i class="bi bi-grid-3x3-gap me-1"></i>Grid
+      </button>
+      <button type="button" class="btn btn-light border" [class.active]="view() === 'floor'" (click)="setView('floor')">
+        <i class="bi bi-bounding-box me-1"></i>Floor plan
+      </button>
+    </div>
+    <button type="button" class="btn btn-light border" (click)="load()" [disabled]="loading()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+    <button *ngIf="canManage()" type="button" class="btn btn-light border" (click)="openAssign()">
+      <i class="bi bi-person-badge me-1"></i>Assign waiters
+    </button>
+    <button *ngIf="canManage()" type="button" class="btn btn-primary" (click)="create()">
+      <i class="bi bi-plus-lg me-1"></i>Add table
+    </button>
+  </div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-4">
+<div class="status-filter">
+  <button type="button" [class.active]="filter() === 'all'" (click)="filter.set('all')">
+    All <strong>{{ tables().length }}</strong>
+  </button>
+  <button type="button" *ngFor="let s of summary()" [class.active]="filter() === s.status" (click)="filter.set(s.status)">
+    <span class="dot" [ngClass]="'dot-' + s.status"></span>{{ s.status | label }} <strong>{{ s.count }}</strong>
+  </button>
+</div>
+<select class="form-select form-select-sm w-auto ms-md-auto" [ngModel]="waiterFilter()" (ngModelChange)="waiterFilter.set($event)" aria-label="Filter by waiter">
+  <option value="">All waiters</option>
+  <option [value]="auth.user()?.id">My tables ({{ myTablesCount() }})</option>
+  <ng-container *ngFor="let s of directory.servers()">
+    <option *ngIf="!directory.isMe(s.userId)" [value]="s.userId">{{ s.name }}</option>
+  </ng-container>
+</select>
+</div>
+
+<div *ngIf="loading()" class="table-grid">
+  <span class="skeleton" style="height: 130px" *ngFor="let _ of [1, 2, 3, 4, 5, 6]"></span>
+</div>
+
+<div *ngIf="!loading() && !sections().length" class="card">
+  <div class="empty-state py-5">
+    <i class="bi bi-grid-3x3-gap"></i>
+    <div class="fw-semibold text-body mb-1">No tables here</div>
+    <div *ngIf="canManage()">Add your first table to build the floor plan.</div>
+  </div>
+</div>
+
+<!-- ================= Floor plan ================= -->
+<div *ngIf="!loading() && view() === 'floor'" class="card mb-4">
+  <div class="toolbar">
+    <span class="text-muted text-xs">
+      <ng-container *ngIf="!editLayout">Tap a table to open its order or start a new one.</ng-container>
+      <ng-container *ngIf="editLayout"><i class="bi bi-arrows-move me-1"></i>Drag tables to arrange the room. Each move is saved automatically.</ng-container>
+      <span *ngIf="unplacedCount() && canManage()" class="ms-2 text-warning">{{ unplacedCount() }} table(s) not placed yet.</span>
+    </span>
+    <div class="ms-auto d-flex gap-2" *ngIf="canManage()">
+      <button *ngIf="editLayout" type="button" class="btn btn-sm btn-light border" [disabled]="savingLayout" (click)="autoArrange()">
+        <span *ngIf="savingLayout" class="spinner-border spinner-border-sm me-1"></span><i *ngIf="!savingLayout" class="bi bi-magic me-1"></i>Auto-arrange
+      </button>
+      <button type="button" class="btn btn-sm" [class.btn-primary]="editLayout" [class.btn-light]="!editLayout" [class.border]="!editLayout" (click)="editLayout = !editLayout">
+        <i class="bi me-1" [class.bi-check2]="editLayout" [class.bi-pencil-square]="!editLayout"></i>{{ editLayout ? 'Done' : 'Edit layout' }}
+      </button>
+    </div>
+  </div>
+  <div class="floor-scroll">
+    <div
+      class="floor-canvas"
+      [class.editing]="editLayout"
+      [style.width.px]="canvasSize().w"
+      [style.height.px]="canvasSize().h"
+      (pointermove)="onPointerMove($event)"
+      (pointerup)="onPointerUp()"
+      (pointercancel)="onPointerUp()"
+    >
+      <div
+        *ngFor="let t of floorTables(); trackBy: trackById"
+        class="floor-table"
+        [ngClass]="'status-' + t.status"
+        [class.inactive]="!t.isActive"
+        [class.round]="t.capacity <= 2"
+        [style.left.px]="pos(t).x"
+        [style.top.px]="pos(t).y"
+        (pointerdown)="onPointerDown(t, $event)"
+        (click)="onFloorClick(t)"
+        [attr.title]="t.name + ' · ' + t.capacity + ' seats · ' + (t.status | label)"
+      >
+        <span class="ft-name">{{ t.name }}</span>
+        <span class="ft-seats"><i class="bi bi-people"></i> {{ t.capacity }}</span>
+        <span class="ft-status">{{ t.isActive ? (t.status | label) : 'Inactive' }}</span>
+        <span *ngIf="t.assignedWaiterId" class="ft-waiter" [attr.title]="directory.name(t.assignedWaiterId)">{{ waiterInitials(t.assignedWaiterId) }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ng-container *ngIf="view() === 'grid'">
+<section *ngFor="let section of sections()" class="mb-4">
+  <h2 class="section-title">{{ section.name }} · {{ section.tables.length }} tables</h2>
+  <div class="table-grid">
+    <div
+      *ngFor="let t of section.tables; trackBy: trackById"
+      class="table-card"
+      [ngClass]="'status-' + t.status"
+      [class.inactive]="!t.isActive"
+      [class.clickable]="!!hint(t) && hint(t) !== 'Inactive'"
+      (click)="onTableClick(t)"
+    >
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="table-name">{{ t.name }}</div>
+          <div class="text-muted text-xs"><i class="bi bi-people me-1"></i>{{ t.capacity }} seats</div>
+        </div>
+        <div class="dropdown" *ngIf="canManage()" (click)="$event.stopPropagation()">
+          <button class="btn btn-sm btn-link text-muted px-1" data-bs-toggle="dropdown" aria-label="Table actions">
+            <i class="bi bi-three-dots-vertical"></i>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><button class="dropdown-item" type="button" (click)="edit(t, $event)"><i class="bi bi-pencil me-2"></i>Edit</button></li>
+            <li><hr class="dropdown-divider" /></li>
+            <li><h6 class="dropdown-header">Set status</h6></li>
+            <li *ngFor="let s of manualStatuses(t)">
+              <button class="dropdown-item" type="button" [disabled]="!!t.currentOrderId" (click)="setStatus(t, s, $event)">
+                {{ s | label }}
+              </button>
+            </li>
+            <li><hr class="dropdown-divider" /></li>
+            <li>
+              <button class="dropdown-item text-danger" type="button" (click)="remove(t, $event)"><i class="bi bi-trash3 me-2"></i>Delete</button>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <app-status-pill [status]="t.isActive ? t.status : 'out_of_service'" [label]="t.isActive ? undefined : 'Inactive'"></app-status-pill>
+      </div>
+      <div class="table-waiter" [class.unassigned]="!t.assignedWaiterId">
+        <i class="bi bi-person"></i>{{ t.assignedWaiterId ? directory.name(t.assignedWaiterId) : 'No waiter assigned' }}
+      </div>
+      <div class="d-flex justify-content-end mt-1">
+        <span *ngIf="hint(t) && hint(t) !== 'Inactive'" class="hint">{{ hint(t) }} <i class="bi bi-arrow-right"></i></span>
+      </div>
+    </div>
+  </div>
+</section>
+</ng-container>
+
+<app-modal [open]="showForm" [title]="editing ? 'Edit table ' + editing.name : 'Add table'" size="sm" [dismissible]="false" (closed)="showForm = false">
+  <div class="row g-3">
+    <div class="col-7">
+      <label class="form-label fw-medium required">Name</label>
+      <input class="form-control" maxlength="30" [(ngModel)]="form.name" placeholder="e.g. T12, Bar 3" />
+    </div>
+    <div class="col-5">
+      <label class="form-label fw-medium required">Capacity</label>
+      <input type="number" class="form-control" min="1" max="50" [(ngModel)]="form.capacity" />
+    </div>
+    <div class="col-7">
+      <label class="form-label fw-medium">Section</label>
+      <input class="form-control" maxlength="40" list="section-list" [(ngModel)]="form.section" />
+      <datalist id="section-list"><option *ngFor="let s of existingSections()" [value]="s"></option></datalist>
+    </div>
+    <div class="col-5">
+      <label class="form-label fw-medium">Sort order</label>
+      <input type="number" class="form-control" [(ngModel)]="form.sortOrder" />
+    </div>
+    <div class="col-12">
+      <label class="form-label fw-medium">Assigned waiter</label>
+      <select class="form-select" [(ngModel)]="form.assignedWaiterId">
+        <option value="">Nobody</option>
+        <option *ngFor="let s of directory.servers()" [value]="s.userId">{{ s.name }} ({{ s.role | label }})</option>
+      </select>
+      <div class="text-muted text-xs mt-1">New orders on this table are credited to this waiter.</div>
+    </div>
+    <div class="col-12" *ngIf="!editing?.currentOrderId">
+      <label class="form-label fw-medium">Status</label>
+      <select class="form-select" [(ngModel)]="form.status">
+        <option *ngFor="let s of statuses" [value]="s" [disabled]="s === 'occupied'">{{ s | label }}</option>
+      </select>
+    </div>
+    <div class="col-12">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="tbl-active" [(ngModel)]="form.isActive" />
+        <label class="form-check-label" for="tbl-active">Active (shown on the floor plan and in the POS)</label>
+      </div>
+    </div>
+  </div>
+  <div *ngIf="formError" class="alert alert-danger py-2 px-3 mt-3 mb-0">{{ formError }}</div>
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="showForm = false" [disabled]="saving">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving">
+      <span *ngIf="saving" class="spinner-border spinner-border-sm me-2"></span>{{ editing ? 'Save changes' : 'Add table' }}
+    </button>
+  </ng-container>
+</app-modal>
+
+<app-modal [open]="showAssign" title="Assign waiters" subtitle="Pick who serves each section this shift. New orders on those tables are credited to them." size="md" [dismissible]="false" (closed)="showAssign = false">
+  <div class="assign-row" *ngFor="let section of existingSections()">
+    <div class="min-w-0">
+      <div class="fw-semibold">{{ section }}</div>
+      <div class="text-muted text-xs text-truncate">
+        <ng-container *ngFor="let t of tablesIn(section); let last = last">{{ t.name }}{{ last ? '' : ', ' }}</ng-container>
+      </div>
+    </div>
+    <select class="form-select form-select-sm" [(ngModel)]="sectionWaiter[section]">
+      <option value="*" *ngIf="sectionWaiter[section] === '*'">Mixed (leave as is)</option>
+      <option value="">Nobody</option>
+      <option *ngFor="let s of directory.servers()" [value]="s.userId">{{ s.name }} ({{ s.role | label }})</option>
+    </select>
+  </div>
+  <div class="text-muted text-xs mt-2">To give one table a different waiter, use Edit on that table.</div>
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="showAssign = false" [disabled]="assigning">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="saveAssign()" [disabled]="assigning">
+      <span *ngIf="assigning" class="spinner-border spinner-border-sm me-2"></span>Save assignments
+    </button>
+  </ng-container>
+</app-modal>

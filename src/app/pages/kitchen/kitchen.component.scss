@@ -1,0 +1,147 @@
+.kpi-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.8125rem;
+
+  strong {
+    color: #0f172a;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+}
+
+.kds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.ticket {
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-top: 4px solid #15803d;
+  border-radius: 12px;
+  box-shadow: var(--app-shadow-sm);
+  overflow: hidden;
+
+  &.urgency-warn {
+    border-top-color: #b45309;
+  }
+
+  &.urgency-late {
+    border-top-color: #b91c1c;
+
+    .timer {
+      background: #fdecec;
+      color: #b91c1c;
+    }
+  }
+}
+
+.ticket-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #eef1f6;
+}
+
+.ticket-no {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.ticket-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.timer {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.ticket-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  li {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f1f4f8;
+
+    &.st-preparing {
+      background: #f5f8fe;
+    }
+
+    &.st-ready {
+      background: #fffaf0;
+    }
+  }
+}
+
+.line-main {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+}
+
+.line-qty {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--bs-primary);
+  min-width: 2rem;
+}
+
+.line-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.line-note {
+  font-size: 0.78rem;
+  color: #b45309;
+  font-weight: 500;
+  margin-top: 0.125rem;
+}
+
+.line-meta {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 0.125rem;
+}
+
+.line-btn {
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+.ticket-foot {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 1rem;
+  background: #fbfcfe;
+
+  &:empty {
+    display: none;
+  }
+}

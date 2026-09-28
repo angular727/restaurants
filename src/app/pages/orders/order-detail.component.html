@@ -1,0 +1,301 @@
+<div *ngIf="loading()" class="d-grid gap-3">
+  <span class="skeleton" style="height: 56px"></span>
+  <span class="skeleton" style="height: 320px"></span>
+</div>
+
+<div *ngIf="!loading() && !order()" class="card">
+  <div class="empty-state py-5">
+    <i class="bi bi-receipt"></i>
+    <div class="fw-semibold text-body mb-2">Order not found</div>
+    <a routerLink="/orders" class="btn btn-light border btn-sm">Back to orders</a>
+  </div>
+</div>
+
+<ng-container *ngIf="order() as o">
+  <!-- Header -->
+  <div class="page-header no-print">
+    <div>
+      <a routerLink="/orders" class="text-muted text-xs fw-medium"><i class="bi bi-arrow-left me-1"></i>All orders</a>
+      <h1 class="mt-1 d-flex align-items-center gap-2 flex-wrap">
+        {{ o.orderNumber }}
+        <app-status-pill [status]="o.status"></app-status-pill>
+        <app-status-pill [status]="o.paymentStatus"></app-status-pill>
+      </h1>
+      <p>
+        {{ o.type | label }}
+        <ng-container *ngIf="tableLabel()"> · Table {{ tableLabel() }} · {{ o.guestCount }} guests</ng-container>
+        · Opened {{ o.openedAt || o.createdAt | tzDate: 'datetime' }}
+        · <i class="bi bi-person"></i> Waiter <strong class="text-body">{{ directory.name(waiterId()) }}</strong>
+      </p>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-light border" (click)="print()"><i class="bi bi-printer me-1"></i>Receipt</button>
+      <a *ngIf="isFloor() && editable()" [routerLink]="['/pos']" [queryParams]="{ orderId: o.id }" class="btn btn-light border">
+        <i class="bi bi-plus-lg me-1"></i>Add items
+      </a>
+      <button *ngIf="isFloor() && editable() && pendingCount()" type="button" class="btn btn-primary" [disabled]="!!busy" (click)="sendToKitchen()">
+        <span *ngIf="busy === 'send'" class="spinner-border spinner-border-sm me-1"></span>
+        <i *ngIf="busy !== 'send'" class="bi bi-send me-1"></i>Send {{ pendingCount() }} to kitchen
+      </button>
+      <button *ngIf="isTill() && o.status !== 'cancelled' && balanceDue() > 0" type="button" class="btn btn-success" (click)="showPayment = true">
+        <i class="bi bi-credit-card me-1"></i>Take payment
+      </button>
+      <button
+        *ngIf="isTill() && editable() && balanceDue() === 0 && activeItems().length"
+        type="button"
+        class="btn btn-dark"
+        [disabled]="!!busy"
+        (click)="complete()"
+      >
+        <span *ngIf="busy === 'complete'" class="spinner-border spinner-border-sm me-1"></span>
+        <i *ngIf="busy !== 'complete'" class="bi bi-check2-circle me-1"></i>Complete order
+      </button>
+      <div class="dropdown" *ngIf="isManager() && editable()">
+        <button class="btn btn-light border" data-bs-toggle="dropdown" aria-label="More actions"><i class="bi bi-three-dots"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li>
+            <button class="dropdown-item text-danger" type="button" (click)="cancelOrder()">
+              <i class="bi bi-x-octagon me-2"></i>Cancel order
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 no-print">
+    <!-- Lines -->
+    <div class="col-xl-8">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="card-title-sm">Items</h2>
+          <span class="text-muted text-xs">{{ activeItems().length }} active line{{ activeItems().length === 1 ? '' : 's' }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-app">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="text-center">Qty</th>
+                <th class="text-end">Price</th>
+                <th>Status</th>
+                <th class="text-end">Total</th>
+                <th class="text-end" style="width: 1%"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let line of o.items" [class.cancelled]="line.status === 'cancelled'">
+                <td>
+                  <div class="fw-medium">{{ line.name }}</div>
+                  <div *ngIf="line.modifiers?.length" class="modifier-chips">
+                    <span class="modifier-chip" *ngFor="let m of line.modifiers" [class.remove]="m.action === 'remove'">
+                      <i class="bi" [class.bi-dash-circle]="m.action === 'remove'" [class.bi-plus-circle]="m.action === 'add'"></i>
+                      {{ (m.action === 'remove' ? '−' : '+') + m.quantity + ' ' + (m.unit ?? '') + ' ' + m.name }}
+                    </span>
+                  </div>
+                  <div *ngIf="line.notes" class="text-warning text-xs"><i class="bi bi-chat-left-text me-1"></i>{{ line.notes }}</div>
+                  <div *ngIf="line.cancelReason" class="text-danger text-xs">Cancelled: {{ line.cancelReason }}</div>
+                  <div *ngIf="line.discountAmount && line.status !== 'cancelled'" class="text-success text-xs">
+                    <i class="bi bi-tag me-1"></i>Discount −{{ line.discountAmount | money: o.currency }}
+                  </div>
+                  <div *ngIf="line.kitchenStation" class="text-muted text-2xs text-uppercase">{{ line.kitchenStation }}</div>
+                </td>
+                <td class="text-center tabular">{{ line.quantity }}</td>
+                <td class="text-end tabular">{{ line.unitPrice | money: o.currency }}</td>
+                <td><app-status-pill [status]="line.status"></app-status-pill></td>
+                <td class="text-end fw-semibold tabular">{{ line.lineTotal | money: o.currency }}</td>
+                <td class="text-end text-nowrap">
+                  <button
+                    *ngIf="isKitchen() && editable() && nextStatus(line) as next"
+                    type="button"
+                    class="btn btn-sm btn-light border me-1"
+                    [disabled]="busy === 'line-' + line.id"
+                    (click)="setLineStatus(line, next)"
+                  >
+                    Mark {{ next }}
+                  </button>
+                  <button
+                    *ngIf="canCancelLine(line)"
+                    type="button"
+                    class="btn btn-sm btn-link text-danger px-1"
+                    title="Cancel item"
+                    [disabled]="busy === 'line-' + line.id"
+                    (click)="cancelLine(line)"
+                  >
+                    <i class="bi bi-x-circle"></i>
+                  </button>
+                </td>
+              </tr>
+              <tr *ngIf="!o.items.length">
+                <td colspan="6"><div class="empty-state">No items on this order yet.</div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Payments -->
+      <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="card-title-sm">Payments</h2>
+          <span class="text-muted text-xs">{{ payments().length }} transaction{{ payments().length === 1 ? '' : 's' }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-app">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Type</th>
+                <th>Method</th>
+                <th class="text-end">Amount</th>
+                <th class="text-end">Tip</th>
+                <th class="text-end">Change</th>
+                <th class="text-end" style="width: 1%"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let p of payments()">
+                <td>{{ p.processedAt | tzDate: 'datetime' }}</td>
+                <td>
+                  <span class="pill" [class.pill-success]="p.type === 'payment'" [class.pill-warning]="p.type === 'refund'">{{ p.type | label }}</span>
+                  <div *ngIf="p.note" class="text-muted text-xs mt-1">{{ p.note }}</div>
+                </td>
+                <td>
+                  <div>{{ p.method | label }}</div>
+                  <div *ngIf="p.provider as pv" class="text-muted text-2xs">
+                    <span *ngIf="pv.cardBrand">{{ pv.cardBrand }} </span><span *ngIf="pv.last4">•••• {{ pv.last4 }}</span>
+                    <span *ngIf="pv.name"> · {{ pv.name }}</span>
+                    <div *ngIf="pv.transactionId">Txn {{ pv.transactionId }}</div>
+                  </div>
+                </td>
+                <td class="text-end tabular fw-semibold" [class.text-danger]="p.type === 'refund'">
+                  {{ p.type === 'refund' ? '−' : '' }}{{ p.amount | money: p.currency }}
+                </td>
+                <td class="text-end tabular">{{ p.tipAmount ? (p.tipAmount | money: p.currency) : '—' }}</td>
+                <td class="text-end tabular">{{ p.changeDue ? (p.changeDue | money: p.currency) : '—' }}</td>
+                <td class="text-end">
+                  <button
+                    *ngIf="isManager() && refundable(p) > 0"
+                    type="button"
+                    class="btn btn-sm btn-light border text-nowrap"
+                    (click)="refundTarget = p"
+                  >
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Refund
+                  </button>
+                </td>
+              </tr>
+              <tr *ngIf="!payments().length">
+                <td colspan="7"><div class="empty-state py-4">No payments yet.</div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="col-xl-4">
+      <div class="card">
+        <div class="card-header"><h2 class="card-title-sm">Bill summary</h2></div>
+        <div class="card-body">
+          <dl class="summary">
+            <div><dt>Subtotal</dt><dd>{{ o.subtotal | money: o.currency }}</dd></div>
+            <div *ngIf="o.discountTotal"><dt>Discount</dt><dd>−{{ o.discountTotal | money: o.currency }}</dd></div>
+            <div><dt>Tax</dt><dd>{{ o.taxTotal | money: o.currency }}</dd></div>
+            <div *ngIf="o.serviceCharge"><dt>Service charge</dt><dd>{{ o.serviceCharge | money: o.currency }}</dd></div>
+            <div class="grand"><dt>Total</dt><dd>{{ o.grandTotal | money: o.currency }}</dd></div>
+            <div><dt>Paid</dt><dd>{{ o.amountPaid | money: o.currency }}</dd></div>
+            <div *ngIf="o.amountRefunded"><dt>Refunded</dt><dd class="text-danger">−{{ o.amountRefunded | money: o.currency }}</dd></div>
+            <div *ngIf="o.tipTotal"><dt>Tips</dt><dd>{{ o.tipTotal | money: o.currency }}</dd></div>
+            <div class="due" [class.settled]="balanceDue() === 0">
+              <dt>Balance due</dt><dd>{{ balanceDue() | money: o.currency }}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      <div class="card mt-3">
+        <div class="card-header"><h2 class="card-title-sm">Details</h2></div>
+        <div class="card-body">
+          <dl class="details">
+            <div>
+              <dt>Waiter</dt>
+              <dd>
+                {{ directory.name(waiterId()) }}
+                <button *ngIf="isTill() && editable()" type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" (click)="openWaiter()">Change</button>
+              </dd>
+            </div>
+            <div *ngIf="o.createdBy && o.createdBy !== waiterId()"><dt>Entered by</dt><dd>{{ directory.name(o.createdBy) }}</dd></div>
+            <div><dt>Source</dt><dd>{{ o.source | label }}</dd></div>
+            <div *ngIf="o.customer?.name"><dt>Customer</dt><dd>{{ o.customer?.name }}</dd></div>
+            <div *ngIf="o.customer?.phone"><dt>Phone</dt><dd>{{ o.customer?.phone }}</dd></div>
+            <div *ngIf="o.customer?.email"><dt>Email</dt><dd>{{ o.customer?.email }}</dd></div>
+            <div *ngIf="o.customer?.address as a">
+              <dt>Deliver to</dt>
+              <dd>{{ a.line1 }}<ng-container *ngIf="a.city">, {{ a.city }}</ng-container><ng-container *ngIf="a.postalCode"> {{ a.postalCode }}</ng-container></dd>
+            </div>
+            <div *ngIf="o.customer?.deliveryNotes"><dt>Delivery notes</dt><dd>{{ o.customer?.deliveryNotes }}</dd></div>
+            <div *ngIf="o.notes"><dt>Note</dt><dd>{{ o.notes }}</dd></div>
+            <div *ngIf="o.completedAt"><dt>Completed</dt><dd>{{ o.completedAt | tzDate: 'datetime' }}</dd></div>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Printable receipt -->
+  <div class="receipt print-only">
+    <div class="text-center mb-2">
+      <div class="fw-bold fs-5">{{ auth.tenant()?.name }}</div>
+      <div *ngIf="auth.tenant()?.address?.line1">{{ auth.tenant()?.address?.line1 }}, {{ auth.tenant()?.address?.city }}</div>
+      <div *ngIf="auth.tenant()?.contact?.phone">{{ auth.tenant()?.contact?.phone }}</div>
+    </div>
+    <div class="d-flex justify-content-between"><span>{{ o.orderNumber }}</span><span>{{ o.createdAt | tzDate: 'datetime' }}</span></div>
+    <div>{{ o.type | label }}<span *ngIf="tableLabel()"> · Table {{ tableLabel() }}</span></div>
+    <div>Served by: {{ directory.name(waiterId()) }}</div>
+    <hr />
+    <ng-container *ngFor="let line of activeItems()">
+      <div class="d-flex justify-content-between">
+        <span>{{ line.quantity }} × {{ line.name }}</span><span>{{ line.lineSubtotal | money: o.currency }}</span>
+      </div>
+      <div *ngFor="let m of line.modifiers" class="ps-3 text-xs">
+        {{ (m.action === 'remove' ? '−' : '+') + m.quantity + ' ' + (m.unit ?? '') + ' ' + m.name }}
+      </div>
+      <div *ngIf="line.discountAmount" class="d-flex justify-content-between ps-3">
+        <span>Discount</span><span>−{{ line.discountAmount | money: o.currency }}</span>
+      </div>
+    </ng-container>
+    <hr />
+    <div class="d-flex justify-content-between"><span>Subtotal</span><span>{{ o.subtotal | money: o.currency }}</span></div>
+    <div *ngIf="o.discountTotal" class="d-flex justify-content-between"><span>Discounts</span><span>−{{ o.discountTotal | money: o.currency }}</span></div>
+    <div class="d-flex justify-content-between"><span>Tax</span><span>{{ o.taxTotal | money: o.currency }}</span></div>
+    <div *ngIf="o.serviceCharge" class="d-flex justify-content-between"><span>Service</span><span>{{ o.serviceCharge | money: o.currency }}</span></div>
+    <div class="d-flex justify-content-between fw-bold"><span>TOTAL</span><span>{{ o.grandTotal | money: o.currency }}</span></div>
+    <div class="d-flex justify-content-between"><span>Paid</span><span>{{ o.amountPaid - o.amountRefunded | money: o.currency }}</span></div>
+    <div class="d-flex justify-content-between"><span>Balance</span><span>{{ balanceDue() | money: o.currency }}</span></div>
+    <hr />
+    <div class="text-center">Thank you for dining with us!</div>
+  </div>
+
+  <app-modal [open]="showWaiter" title="Change waiter" [subtitle]="o.orderNumber + ' · currently ' + directory.name(waiterId())" size="sm" (closed)="showWaiter = false">
+    <label class="form-label fw-medium">Waiter serving this order</label>
+    <select class="form-select" [(ngModel)]="waiterChoice">
+      <option *ngFor="let s of directory.servers()" [value]="s.userId">{{ s.name }} ({{ s.role | label }})</option>
+    </select>
+    <div class="text-muted text-xs mt-2">Sales and tips for this order will count for the new waiter.</div>
+    <ng-container modal-footer>
+      <button type="button" class="btn btn-light border" (click)="showWaiter = false">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="busy === 'waiter'" (click)="saveWaiter()">Save</button>
+    </ng-container>
+  </app-modal>
+
+  <app-payment-dialog [open]="showPayment" [order]="o" (closed)="showPayment = false" (paid)="onPaid($event)"></app-payment-dialog>
+  <app-refund-dialog
+    [open]="!!refundTarget"
+    [payment]="refundTarget"
+    [refundable]="refundTarget ? refundable(refundTarget) : 0"
+    (closed)="refundTarget = null"
+    (refunded)="onRefunded()"
+  ></app-refund-dialog>
+</ng-container>

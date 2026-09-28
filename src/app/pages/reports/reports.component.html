@@ -1,0 +1,934 @@
+<div class="page-header">
+  <div>
+    <h1>Reports</h1>
+    <p>
+      {{ auth.tenant()?.name }} · <strong class="text-body">{{ range().label }}</strong>
+      <span *ngIf="generatedAt() as g"> · Generated {{ g | tzDate: 'datetime' }}</span>
+    </p>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button type="button" class="btn btn-light border" (click)="refresh()" [disabled]="loading()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    <button type="button" class="btn btn-light border" (click)="print()"><i class="bi bi-printer me-1"></i>Print / PDF</button>
+  </div>
+</div>
+
+<div class="print-only print-head">
+  <div class="fw-bold fs-5">{{ auth.tenant()?.name }} · {{ tabLabel() }}</div>
+  <div>Period: {{ range().label }} ({{ range().days[0] }} → {{ range().days[range().days.length - 1] }}) · {{ auth.timezone() }}</div>
+  <div>Filters: {{ filterSummary() }}</div>
+</div>
+
+<!-- ================= Filters ================= -->
+<div class="card filter-card mb-3 no-print">
+  <div class="card-body">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <span class="filter-title"><i class="bi bi-calendar3 me-1"></i>Period</span>
+      <div class="btn-group btn-group-sm flex-wrap">
+        <button type="button" *ngFor="let r of ranges" class="btn btn-light border" [class.active]="range().key === r.key" (click)="setRange(r.key)">{{ r.label }}</button>
+      </div>
+      <ng-container *ngIf="range().key === 'custom'">
+        <input type="date" class="form-control form-control-sm w-auto" [(ngModel)]="customFrom" />
+        <span class="text-muted">to</span>
+        <input type="date" class="form-control form-control-sm w-auto" [(ngModel)]="customTo" />
+        <button type="button" class="btn btn-sm btn-primary" (click)="applyCustom()">Apply</button>
+      </ng-container>
+      <button type="button" class="btn btn-sm btn-link ms-auto" (click)="showFilters = !showFilters">
+        <i class="bi bi-funnel me-1"></i>{{ showFilters ? 'Hide filters' : 'Show filters' }}
+        <span *ngIf="activeFilters().length" class="badge rounded-pill bg-primary ms-1">{{ activeFilters().length }}</span>
+      </button>
+    </div>
+
+    <div class="filter-grid" *ngIf="showFilters">
+      <div>
+        <label class="filter-label">Waiter</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().waiter" (ngModelChange)="setFilter('waiter', $event)">
+          <option value="">All waiters</option>
+          <option *ngFor="let s of directory.servers()" [value]="s.userId">{{ s.name }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Section</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().section" (ngModelChange)="setFilter('section', $event)">
+          <option value="">All sections</option>
+          <option *ngFor="let s of sections()" [value]="s">{{ s }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Table</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().table" (ngModelChange)="setFilter('table', $event)">
+          <option value="">All tables</option>
+          <ng-container *ngFor="let t of tables()">
+            <option *ngIf="!filters().section || (t.section || 'Main') === filters().section" [value]="t.id">{{ t.name }} · {{ t.section }}</option>
+          </ng-container>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Order type</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().type" (ngModelChange)="setFilter('type', $event)">
+          <option value="">All types</option>
+          <option *ngFor="let t of orderTypes" [value]="t">{{ t | label }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Source</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().source" (ngModelChange)="setFilter('source', $event)">
+          <option value="">All sources</option>
+          <option *ngFor="let s of orderSources" [value]="s">{{ s === 'pos' ? 'Counter / POS' : s === 'qr' ? 'QR code' : (s | label) }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Order status</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().status" (ngModelChange)="setFilter('status', $event)">
+          <option value="">All (excl. cancelled)</option>
+          <option value="completed">Completed</option>
+          <option value="open">Open / not closed</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Category</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().category" (ngModelChange)="setFilter('category', $event)">
+          <option value="">All categories</option>
+          <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Product / item</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().item" (ngModelChange)="setFilter('item', $event)">
+          <option value="">All items</option>
+          <option *ngFor="let m of itemOptions()" [value]="m.id">{{ m.name }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Payment method</label>
+        <select class="form-select form-select-sm" [ngModel]="filters().method" (ngModelChange)="setFilter('method', $event)">
+          <option value="">All methods</option>
+          <option *ngFor="let m of paymentMethods" [value]="m">{{ m | label }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-label">Time of day</label>
+        <div class="d-flex gap-1 align-items-center">
+          <select class="form-select form-select-sm" [ngModel]="filters().hourFrom" (ngModelChange)="setFilter('hourFrom', +$event)">
+            <option *ngFor="let h of hours" [value]="h">{{ hourLabel(h) }}</option>
+          </select>
+          <span class="text-muted">–</span>
+          <select class="form-select form-select-sm" [ngModel]="filters().hourTo" (ngModelChange)="setFilter('hourTo', +$event)">
+            <option *ngFor="let h of hours" [value]="h">{{ hourLabel(h + 1) }}</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="activeFilters().length" class="d-flex flex-wrap gap-2 align-items-center mt-3">
+      <span class="filter-chip" *ngFor="let c of activeFilters()">
+        {{ c.label }}
+        <button type="button" (click)="clearFilter(c.key)" aria-label="Remove filter"><i class="bi bi-x"></i></button>
+      </span>
+      <button type="button" class="btn btn-sm btn-link text-danger" (click)="clearFilters()">Clear all</button>
+    </div>
+  </div>
+</div>
+
+<div class="nav-tabs-app report-tabs no-print">
+  <button type="button" *ngFor="let t of tabs" [class.active]="tab() === t.key" (click)="setTab(t.key)">
+    <i class="bi {{ t.icon }} me-1"></i>{{ t.label }}
+  </button>
+</div>
+
+<div *ngIf="loading()" class="d-grid gap-3">
+  <div class="row g-3"><div class="col-6 col-lg-3" *ngFor="let _ of [1, 2, 3, 4]"><span class="skeleton" style="height: 92px"></span></div></div>
+  <span class="skeleton" style="height: 260px"></span>
+</div>
+
+<ng-container *ngIf="!loading()">
+  <!-- Headline numbers shared by the sales tabs -->
+  <div class="row g-3 mb-3" *ngIf="['overview', 'daily', 'items', 'lines', 'orders', 'tables', 'staff', 'time'].includes(tab())">
+    <div class="col-6 col-xl">
+      <div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Net sales</div>
+        <div class="kpi-value">{{ summary().net | money }}</div>
+        <div class="kpi-foot">Gross {{ summary().gross | money }} − disc. {{ summary().discounts | money }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-xl">
+      <div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Orders</div>
+        <div class="kpi-value">{{ summary().orders }}</div>
+        <div class="kpi-foot">{{ summary().completed }} completed · {{ summary().open }} open · {{ summary().cancelled }} cancelled</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-xl">
+      <div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Items sold</div>
+        <div class="kpi-value">{{ summary().items }}</div>
+        <div class="kpi-foot">{{ summary().guests }} guests · {{ summary().perGuest | money }}/guest</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-xl">
+      <div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Average check</div>
+        <div class="kpi-value">{{ summary().avgCheck | money }}</div>
+        <div class="kpi-foot">Total {{ summary().total | money }}</div>
+      </div></div>
+    </div>
+    <div class="col-12 col-xl">
+      <div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Gross profit</div>
+        <div class="kpi-value">{{ summary().profit | money }}</div>
+        <div class="kpi-foot">
+          <ng-container *ngIf="!invLoading(); else costLoading">Cost {{ summary().cost | money }} · {{ summary().margin | number: '1.0-1' }}% margin</ng-container>
+          <ng-template #costLoading>Calculating ingredient cost…</ng-template>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ======================================================= SUMMARY -->
+  <ng-container *ngIf="tab() === 'overview'">
+    <div class="row g-3">
+      <div class="col-xl-8">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">Net sales by day</h2></div>
+          <div class="card-body">
+            <div class="vbars" [class.dense]="dailyTrend().length > 14">
+              <div class="vbar clickable" *ngFor="let b of dailyTrend()" [attr.title]="b.label + ': ' + money(b.value) + ' · ' + b.sub">
+                <span class="vbar-value" *ngIf="dailyTrend().length <= 14">{{ b.value ? money(b.value) : '' }}</span>
+                <span class="vbar-fill" [style.height.%]="pct(b.value, dailyTrend())"></span>
+                <span class="vbar-label">{{ b.label }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-4">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="card-title-sm">Revenue breakdown</h2>
+            <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportSummary()"><i class="bi bi-download me-1"></i>CSV</button>
+          </div>
+          <div class="card-body">
+            <dl class="statement">
+              <div><dt>Gross sales</dt><dd>{{ summary().gross | money }}</dd></div>
+              <div><dt>Discounts</dt><dd class="text-success">−{{ summary().discounts | money }}</dd></div>
+              <div class="subtotal"><dt>Net sales</dt><dd>{{ summary().net | money }}</dd></div>
+              <div><dt>Tax</dt><dd>{{ summary().tax | money }}</dd></div>
+              <div *ngIf="summary().whole"><dt>Service charge</dt><dd>{{ summary().service | money }}</dd></div>
+              <div class="grand"><dt>Total</dt><dd>{{ summary().total | money }}</dd></div>
+              <ng-container *ngIf="summary().whole">
+                <div><dt>Tips</dt><dd>{{ summary().tips | money }}</dd></div>
+                <div><dt>Collected (net of refunds)</dt><dd>{{ summary().paid | money }}</dd></div>
+                <div><dt>Refunded</dt><dd class="text-danger">{{ summary().refunded | money }}</dd></div>
+                <div><dt>Outstanding</dt><dd [class.text-danger]="summary().outstanding > 0">{{ summary().outstanding | money }}</dd></div>
+              </ng-container>
+              <div><dt>Cost of goods</dt><dd>{{ summary().cost | money }}</dd></div>
+              <div><dt>Voided / cancelled</dt><dd class="text-danger">{{ voidTotal() | money }}</dd></div>
+            </dl>
+            <div *ngIf="!summary().whole" class="text-muted text-xs">Item filter on: service charge, tips and payments are per order and not shown.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">By order type</h2></div>
+          <div class="card-body">
+            <div class="hbar clickable" *ngFor="let r of byType()" (click)="drill('type', r.key, 'overview')">
+              <div class="hbar-head"><span>{{ r.label }} <span class="text-muted">· {{ r.orders }} orders</span></span><strong>{{ r.net | money }}</strong></div>
+              <div class="hbar-track"><span [style.width.%]="r.share"></span></div>
+            </div>
+            <div *ngIf="!byType().length" class="text-muted">No sales.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">By order source</h2></div>
+          <div class="card-body">
+            <div class="hbar clickable" *ngFor="let r of bySource()" (click)="drill('source', r.key, 'overview')">
+              <div class="hbar-head"><span>{{ r.label }} <span class="text-muted">· {{ r.orders }} orders</span></span><strong>{{ r.net | money }}</strong></div>
+              <div class="hbar-track"><span class="alt" [style.width.%]="r.share"></span></div>
+            </div>
+            <div *ngIf="!bySource().length" class="text-muted">No sales.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ======================================================= DATE-WISE -->
+  <div class="card" *ngIf="tab() === 'daily'">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div><h2 class="card-title-sm">Date-wise sales</h2><div class="text-muted text-xs mt-1">One row per day of the period</div></div>
+      <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportDaily()"><i class="bi bi-download me-1"></i>CSV</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-app table-hover table-sm-rows">
+        <thead>
+          <tr>
+            <th class="sortable" (click)="sortBy('daily', 'date')">Date <i class="bi {{ sortIcon('daily', 'date') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'orders')">Orders <i class="bi {{ sortIcon('daily', 'orders') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'guests')">Guests <i class="bi {{ sortIcon('daily', 'guests') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'items')">Items <i class="bi {{ sortIcon('daily', 'items') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'gross')">Gross <i class="bi {{ sortIcon('daily', 'gross') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'discount')">Discounts <i class="bi {{ sortIcon('daily', 'discount') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'net')">Net <i class="bi {{ sortIcon('daily', 'net') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'tax')">Tax <i class="bi {{ sortIcon('daily', 'tax') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'total')">Total <i class="bi {{ sortIcon('daily', 'total') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'tips')">Tips <i class="bi {{ sortIcon('daily', 'tips') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'avg')">Avg check <i class="bi {{ sortIcon('daily', 'avg') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('daily', 'profit')">Profit <i class="bi {{ sortIcon('daily', 'profit') }}"></i></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let d of dailyRows()" [class.text-muted]="!d.orders">
+            <td class="fw-medium text-nowrap">{{ d.date }}</td>
+            <td class="text-end tabular">{{ d.orders }}</td>
+            <td class="text-end tabular">{{ d.guests }}</td>
+            <td class="text-end tabular">{{ d.items }}</td>
+            <td class="text-end tabular">{{ d.gross | money }}</td>
+            <td class="text-end tabular">{{ d.discount | money }}</td>
+            <td class="text-end tabular fw-semibold">{{ d.net | money }}</td>
+            <td class="text-end tabular">{{ d.tax | money }}</td>
+            <td class="text-end tabular">{{ d.total | money }}</td>
+            <td class="text-end tabular">{{ d.tips | money }}</td>
+            <td class="text-end tabular">{{ d.avg | money }}</td>
+            <td class="text-end tabular">{{ d.profit | money }}</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="fw-semibold">
+            <td>Total</td>
+            <td class="text-end tabular">{{ dailyTotals()['orders'] }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['guests'] }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['items'] }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['gross'] | money }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['discount'] | money }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['net'] | money }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['tax'] | money }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['total'] | money }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['tips'] | money }}</td>
+            <td class="text-end tabular">{{ (dailyTotals()['orders'] ? dailyTotals()['total'] / dailyTotals()['orders'] : 0) | money }}</td>
+            <td class="text-end tabular">{{ dailyTotals()['profit'] | money }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- ======================================================= ITEM-WISE -->
+  <ng-container *ngIf="tab() === 'items'">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div><h2 class="card-title-sm">Item-wise sales & profit</h2><div class="text-muted text-xs mt-1">Click an item to see every sale of it</div></div>
+        <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportItems()"><i class="bi bi-download me-1"></i>CSV</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-app table-hover">
+          <thead>
+            <tr>
+              <th class="sortable" (click)="sortBy('items', 'name')">Item <i class="bi {{ sortIcon('items', 'name') }}"></i></th>
+              <th class="sortable" (click)="sortBy('items', 'category')">Category <i class="bi {{ sortIcon('items', 'category') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'qty')">Qty <i class="bi {{ sortIcon('items', 'qty') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'orders')">Orders <i class="bi {{ sortIcon('items', 'orders') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'gross')">Gross <i class="bi {{ sortIcon('items', 'gross') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'discount')">Disc. <i class="bi {{ sortIcon('items', 'discount') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'net')">Net sales <i class="bi {{ sortIcon('items', 'net') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'cost')">Cost <i class="bi {{ sortIcon('items', 'cost') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'profit')">Profit <i class="bi {{ sortIcon('items', 'profit') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('items', 'margin')">Margin <i class="bi {{ sortIcon('items', 'margin') }}"></i></th>
+              <th class="sortable" style="width: 14%" (click)="sortBy('items', 'share')">Share <i class="bi {{ sortIcon('items', 'share') }}"></i></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of itemRows()" class="clickable" (click)="drill('item', r.id)">
+              <td class="fw-semibold">{{ r.name }}</td>
+              <td>{{ r.category }}</td>
+              <td class="text-end tabular">{{ r.qty }}</td>
+              <td class="text-end tabular">{{ r.orders }}</td>
+              <td class="text-end tabular">{{ r.gross | money }}</td>
+              <td class="text-end tabular text-success">{{ r.discount ? '−' : '' }}{{ r.discount | money }}</td>
+              <td class="text-end tabular fw-semibold">{{ r.net | money }}</td>
+              <td class="text-end tabular">{{ r.cost | money }}</td>
+              <td class="text-end tabular">{{ r.profit | money }}</td>
+              <td class="text-end tabular" [ngClass]="r.margin >= 70 ? 'text-success' : r.margin >= 60 ? 'text-warning' : 'text-danger'">{{ r.margin | number: '1.0-1' }}%</td>
+              <td><div class="share"><div class="hbar-track"><span [style.width.%]="r.share"></span></div><span>{{ r.share | number: '1.0-1' }}%</span></div></td>
+            </tr>
+            <tr *ngIf="!itemRows().length"><td colspan="11"><div class="empty-state">No items sold with these filters.</div></td></tr>
+          </tbody>
+          <tfoot *ngIf="itemRows().length">
+            <tr class="fw-semibold">
+              <td colspan="2">Total</td>
+              <td class="text-end tabular">{{ itemTotals()['qty'] }}</td>
+              <td></td>
+              <td class="text-end tabular">{{ itemTotals()['gross'] | money }}</td>
+              <td class="text-end tabular">{{ itemTotals()['discount'] | money }}</td>
+              <td class="text-end tabular">{{ itemTotals()['net'] | money }}</td>
+              <td class="text-end tabular">{{ itemTotals()['cost'] | money }}</td>
+              <td class="text-end tabular">{{ itemTotals()['profit'] | money }}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-0">
+      <div class="col-xl-5">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">Category-wise</h2></div>
+          <div class="card-body">
+            <div class="hbar" *ngFor="let c of categoryRows()">
+              <div class="hbar-head"><span>{{ c.name }} <span class="text-muted">· {{ c.qty }} sold · cost {{ c.cost | money }}</span></span><strong>{{ c.net | money }}</strong></div>
+              <div class="hbar-track"><span [style.width.%]="c.share"></span></div>
+            </div>
+            <div *ngIf="!categoryRows().length" class="text-muted">No sales.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-7">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">Voids & cancelled items</h2><div class="text-muted text-xs mt-1">{{ voids().length }} lines · {{ voidTotal() | money }}</div></div>
+          <div class="table-responsive">
+            <table class="table table-app">
+              <thead><tr><th>Order</th><th>Item</th><th>Table</th><th>Waiter</th><th>Reason</th><th class="text-end">Value</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let v of voids()">
+                  <td><a [routerLink]="['/orders', v.order.id]">{{ v.order.orderNumber }}</a></td>
+                  <td>{{ v.qty }} × {{ v.name }}</td>
+                  <td>{{ v.table }}</td>
+                  <td>{{ v.waiter }}</td>
+                  <td>{{ v.reason || '—' }}</td>
+                  <td class="text-end tabular text-danger">{{ v.value | money }}</td>
+                </tr>
+                <tr *ngIf="!voids().length"><td colspan="6"><div class="empty-state py-3">No voids.</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ======================================================= ITEM SALES DETAIL -->
+  <div class="card" *ngIf="tab() === 'lines'">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div><h2 class="card-title-sm">Item sales detail</h2><div class="text-muted text-xs mt-1">Every item sold · {{ lineRegister().length }} lines</div></div>
+      <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportLines()"><i class="bi bi-download me-1"></i>CSV</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-app table-hover">
+        <thead>
+          <tr>
+            <th class="sortable" (click)="sortBy('lines', 'at')">Date & time <i class="bi {{ sortIcon('lines', 'at') }}"></i></th>
+            <th>Order</th>
+            <th class="sortable" (click)="sortBy('lines', 'tableName')">Table <i class="bi {{ sortIcon('lines', 'tableName') }}"></i></th>
+            <th class="sortable" (click)="sortBy('lines', 'waiterId')">Waiter <i class="bi {{ sortIcon('lines', 'waiterId') }}"></i></th>
+            <th class="sortable" (click)="sortBy('lines', 'name')">Item <i class="bi {{ sortIcon('lines', 'name') }}"></i></th>
+            <th class="sortable" (click)="sortBy('lines', 'category')">Category <i class="bi {{ sortIcon('lines', 'category') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('lines', 'qty')">Qty <i class="bi {{ sortIcon('lines', 'qty') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('lines', 'price')">Price <i class="bi {{ sortIcon('lines', 'price') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('lines', 'discount')">Disc. <i class="bi {{ sortIcon('lines', 'discount') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('lines', 'net')">Net <i class="bi {{ sortIcon('lines', 'net') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('lines', 'cost')">Cost <i class="bi {{ sortIcon('lines', 'cost') }}"></i></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of linePage()">
+            <td class="text-nowrap">{{ r.at | tzDate: 'datetime' }}</td>
+            <td><a [routerLink]="['/orders', r.order.id]">{{ r.order.orderNumber }}</a></td>
+            <td class="clickable" (click)="drill('table', r.tableId)">{{ r.tableName }}</td>
+            <td class="clickable" (click)="drill('waiter', r.waiterId)">{{ directory.name(r.waiterId) }}</td>
+            <td class="fw-medium clickable" (click)="drill('item', r.menuItemId)">
+              {{ r.name }}
+              <div *ngIf="r.line.notes" class="text-warning text-2xs">{{ r.line.notes }}</div>
+            </td>
+            <td>{{ r.category }}</td>
+            <td class="text-end tabular">{{ r.qty }}</td>
+            <td class="text-end tabular">{{ r.price | money }}</td>
+            <td class="text-end tabular text-success">{{ r.discount ? '−' + money(r.discount) : '—' }}</td>
+            <td class="text-end tabular fw-semibold">{{ r.net | money }}</td>
+            <td class="text-end tabular">{{ r.cost | money }}</td>
+          </tr>
+          <tr *ngIf="!lineRegister().length"><td colspan="11"><div class="empty-state">No sales with these filters.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager-bar" *ngIf="lineRegister().length > pageSize">
+      <span class="text-muted text-xs">Page {{ linesPage() }} of {{ lastPage(lineRegister().length) }}</span>
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-light border" [disabled]="linesPage() <= 1" (click)="setLinesPage(linesPage() - 1)"><i class="bi bi-chevron-left"></i></button>
+        <button class="btn btn-light border" [disabled]="linesPage() >= lastPage(lineRegister().length)" (click)="setLinesPage(linesPage() + 1)"><i class="bi bi-chevron-right"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================= ORDERS REGISTER -->
+  <div class="card" *ngIf="tab() === 'orders'">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div><h2 class="card-title-sm">Orders register</h2><div class="text-muted text-xs mt-1">{{ orderRegister().length }} orders</div></div>
+      <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportOrders()"><i class="bi bi-download me-1"></i>CSV</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-app table-hover">
+        <thead>
+          <tr>
+            <th class="sortable" (click)="sortBy('orders', 'at')">Opened <i class="bi {{ sortIcon('orders', 'at') }}"></i></th>
+            <th class="sortable" (click)="sortBy('orders', 'number')">Order <i class="bi {{ sortIcon('orders', 'number') }}"></i></th>
+            <th class="sortable" (click)="sortBy('orders', 'type')">Type <i class="bi {{ sortIcon('orders', 'type') }}"></i></th>
+            <th class="sortable" (click)="sortBy('orders', 'table')">Table <i class="bi {{ sortIcon('orders', 'table') }}"></i></th>
+            <th class="sortable" (click)="sortBy('orders', 'waiter')">Waiter <i class="bi {{ sortIcon('orders', 'waiter') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('orders', 'guests')">Guests <i class="bi {{ sortIcon('orders', 'guests') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('orders', 'items')">Items <i class="bi {{ sortIcon('orders', 'items') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('orders', 'net')">Net <i class="bi {{ sortIcon('orders', 'net') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('orders', 'total')">Total <i class="bi {{ sortIcon('orders', 'total') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('orders', 'balance')">Balance <i class="bi {{ sortIcon('orders', 'balance') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('orders', 'minutes')">Minutes <i class="bi {{ sortIcon('orders', 'minutes') }}"></i></th>
+            <th class="sortable" (click)="sortBy('orders', 'status')">Status <i class="bi {{ sortIcon('orders', 'status') }}"></i></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let o of orderPage()">
+            <td class="text-nowrap">{{ o.at | tzDate: 'datetime' }}</td>
+            <td><a [routerLink]="['/orders', o.order.id]" class="fw-semibold">{{ o.number }}</a></td>
+            <td>{{ o.type | label }}</td>
+            <td>{{ o.table }}</td>
+            <td>{{ o.waiter }}</td>
+            <td class="text-end tabular">{{ o.guests }}</td>
+            <td class="text-end tabular">{{ o.items }}</td>
+            <td class="text-end tabular">{{ o.net | money }}</td>
+            <td class="text-end tabular fw-semibold">{{ o.total | money }}</td>
+            <td class="text-end tabular" [class.text-danger]="o.balance > 0">{{ o.balance | money }}</td>
+            <td class="text-end tabular">{{ o.minutes ?? '—' }}</td>
+            <td><span class="pill" [class.pill-success]="o.status === 'completed'" [class.pill-info]="o.status !== 'completed'">{{ o.status | label }}</span></td>
+          </tr>
+          <tr *ngIf="!orderRegister().length"><td colspan="12"><div class="empty-state">No orders with these filters.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager-bar" *ngIf="orderRegister().length > pageSize">
+      <span class="text-muted text-xs">Page {{ ordersPage() }} of {{ lastPage(orderRegister().length) }}</span>
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-light border" [disabled]="ordersPage() <= 1" (click)="setOrdersPage(ordersPage() - 1)"><i class="bi bi-chevron-left"></i></button>
+        <button class="btn btn-light border" [disabled]="ordersPage() >= lastPage(orderRegister().length)" (click)="setOrdersPage(ordersPage() + 1)"><i class="bi bi-chevron-right"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================= TABLE-WISE -->
+  <div class="card" *ngIf="tab() === 'tables'">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div><h2 class="card-title-sm">Table-wise sales</h2><div class="text-muted text-xs mt-1">Click a table to see its sales detail</div></div>
+      <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportTables()"><i class="bi bi-download me-1"></i>CSV</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-app table-hover">
+        <thead>
+          <tr>
+            <th class="sortable" (click)="sortBy('tables', 'name')">Table <i class="bi {{ sortIcon('tables', 'name') }}"></i></th>
+            <th class="sortable" (click)="sortBy('tables', 'section')">Section <i class="bi {{ sortIcon('tables', 'section') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'orders')">Orders <i class="bi {{ sortIcon('tables', 'orders') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'guests')">Guests <i class="bi {{ sortIcon('tables', 'guests') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'items')">Items <i class="bi {{ sortIcon('tables', 'items') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'net')">Net sales <i class="bi {{ sortIcon('tables', 'net') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'avg')">Avg check <i class="bi {{ sortIcon('tables', 'avg') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'perGuest')">Per guest <i class="bi {{ sortIcon('tables', 'perGuest') }}"></i></th>
+            <th class="sortable text-end" (click)="sortBy('tables', 'avgMinutes')">Avg time <i class="bi {{ sortIcon('tables', 'avgMinutes') }}"></i></th>
+            <th class="sortable" style="width: 14%" (click)="sortBy('tables', 'share')">Share <i class="bi {{ sortIcon('tables', 'share') }}"></i></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let t of tableRows()" class="clickable" (click)="drill('table', t.id)">
+            <td class="fw-semibold">{{ t.name }}</td>
+            <td>{{ t.section }}</td>
+            <td class="text-end tabular">{{ t.orders }}</td>
+            <td class="text-end tabular">{{ t.guests }}</td>
+            <td class="text-end tabular">{{ t.items }}</td>
+            <td class="text-end tabular fw-semibold">{{ t.net | money }}</td>
+            <td class="text-end tabular">{{ t.avg | money }}</td>
+            <td class="text-end tabular">{{ t.perGuest | money }}</td>
+            <td class="text-end tabular">{{ t.avgMinutes !== null ? t.avgMinutes + ' min' : '—' }}</td>
+            <td><div class="share"><div class="hbar-track"><span [style.width.%]="t.share"></span></div><span>{{ t.share | number: '1.0-0' }}%</span></div></td>
+          </tr>
+          <tr *ngIf="!tableRows().length"><td colspan="10"><div class="empty-state">No sales with these filters.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ======================================================= WAITER-WISE -->
+  <ng-container *ngIf="tab() === 'staff'">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div><h2 class="card-title-sm">Waiter-wise sales</h2><div class="text-muted text-xs mt-1">Click a waiter to see everything they sold</div></div>
+        <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportStaff()"><i class="bi bi-download me-1"></i>CSV</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-app table-hover">
+          <thead>
+            <tr>
+              <th class="sortable" (click)="sortBy('staff', 'name')">Waiter <i class="bi {{ sortIcon('staff', 'name') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('staff', 'orders')">Orders <i class="bi {{ sortIcon('staff', 'orders') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('staff', 'guests')">Guests <i class="bi {{ sortIcon('staff', 'guests') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('staff', 'items')">Items <i class="bi {{ sortIcon('staff', 'items') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('staff', 'net')">Net sales <i class="bi {{ sortIcon('staff', 'net') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('staff', 'avg')">Avg check <i class="bi {{ sortIcon('staff', 'avg') }}"></i></th>
+              <th class="sortable text-end" (click)="sortBy('staff', 'tips')">Tips <i class="bi {{ sortIcon('staff', 'tips') }}"></i></th>
+              <th class="sortable" style="width: 14%" (click)="sortBy('staff', 'share')">Share <i class="bi {{ sortIcon('staff', 'share') }}"></i></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let w of waiterRows()" class="clickable" (click)="drill('waiter', w.id)">
+              <td class="fw-semibold">{{ w.name }}</td>
+              <td class="text-end tabular">{{ w.orders }}</td>
+              <td class="text-end tabular">{{ w.guests }}</td>
+              <td class="text-end tabular">{{ w.items }}</td>
+              <td class="text-end tabular fw-semibold">{{ w.net | money }}</td>
+              <td class="text-end tabular">{{ w.avg | money }}</td>
+              <td class="text-end tabular">{{ w.tips | money }}</td>
+              <td><div class="share"><div class="hbar-track"><span [style.width.%]="w.share"></span></div><span>{{ w.share | number: '1.0-0' }}%</span></div></td>
+            </tr>
+            <tr *ngIf="!waiterRows().length"><td colspan="8"><div class="empty-state">No sales with these filters.</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-0">
+      <div class="col-xl-7">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">What each waiter sold</h2></div>
+          <div class="card-body">
+            <div class="waiter-block" *ngFor="let w of waiterItems()">
+              <div class="fw-semibold mb-1">{{ w.name }}</div>
+              <div class="d-flex flex-wrap gap-2">
+                <span class="item-chip" *ngFor="let i of w.items">{{ i.qty }} × {{ i.name }} <strong>{{ i.net | money }}</strong></span>
+              </div>
+            </div>
+            <div *ngIf="!waiterItems().length" class="text-muted">No sales.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-5">
+        <div class="card h-100">
+          <div class="card-header"><h2 class="card-title-sm">Payments taken by</h2></div>
+          <div class="table-responsive">
+            <table class="table table-app">
+              <thead><tr><th>Staff</th><th class="text-end">Payments</th><th class="text-end">Collected</th><th class="text-end">Refunded</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let c of cashierRows()">
+                  <td class="fw-semibold">{{ c.name }}</td>
+                  <td class="text-end tabular">{{ c.payments }}</td>
+                  <td class="text-end tabular">{{ c.collected | money }}</td>
+                  <td class="text-end tabular text-danger">{{ c.refunded ? '−' + money(c.refunded) : '—' }}</td>
+                </tr>
+                <tr *ngIf="!cashierRows().length"><td colspan="4"><div class="empty-state py-3">No payments.</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ======================================================= HOUR & DAY -->
+  <ng-container *ngIf="tab() === 'time'">
+    <div class="row g-3 mb-3">
+      <div class="col-6"><div class="card kpi"><div class="card-body">
+        <div class="kpi-label">Busiest hour</div><div class="kpi-value">{{ busiestHour().label }}</div>
+        <div class="kpi-foot">{{ busiestHour().value | money }} net · {{ busiestHour().sub }}</div>
+      </div></div></div>
+      <div class="col-6"><div class="card kpi"><div class="card-body">
+        <div class="kpi-label">Busiest day of week</div><div class="kpi-value">{{ busiestDay().label }}</div>
+        <div class="kpi-foot">{{ busiestDay().value | money }} net · {{ busiestDay().sub }}</div>
+      </div></div></div>
+    </div>
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="card-title-sm">Hour-wise net sales</h2>
+        <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportHours()"><i class="bi bi-download me-1"></i>CSV</button>
+      </div>
+      <div class="card-body">
+        <div class="vbars dense">
+          <div class="vbar" *ngFor="let b of hourly()" [attr.title]="b.label + ': ' + money(b.value) + ' · ' + b.sub">
+            <span class="vbar-fill" [style.height.%]="pct(b.value, hourly())"></span>
+            <span class="vbar-label">{{ b.label }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2 class="card-title-sm">Day-of-week net sales</h2></div>
+      <div class="card-body">
+        <div class="vbars">
+          <div class="vbar" *ngFor="let b of weekdays()" [attr.title]="b.sub">
+            <span class="vbar-value">{{ b.value ? money(b.value) : '' }}</span>
+            <span class="vbar-fill alt" [style.height.%]="pct(b.value, weekdays())"></span>
+            <span class="vbar-label">{{ b.label }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ======================================================= PAYMENTS -->
+  <ng-container *ngIf="tab() === 'payments'">
+    <div class="row g-3 mb-3">
+      <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Collected</div><div class="kpi-value">{{ paymentTotals()['collected'] | money }}</div>
+        <div class="kpi-foot">{{ paymentTotals()['count'] }} payments</div>
+      </div></div></div>
+      <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Refunded</div><div class="kpi-value text-danger">{{ paymentTotals()['refunded'] | money }}</div>
+        <div class="kpi-foot">{{ paymentTotals()['refunds'] }} refunds</div>
+      </div></div></div>
+      <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Net received</div><div class="kpi-value">{{ paymentTotals()['net'] | money }}</div>
+        <div class="kpi-foot">Collected − refunds</div>
+      </div></div></div>
+      <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+        <div class="kpi-label">Tips</div><div class="kpi-value">{{ paymentTotals()['tips'] | money }}</div>
+        <div class="kpi-foot">On top of bills</div>
+      </div></div></div>
+    </div>
+    <div class="row g-3">
+      <div class="col-xl-8">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="card-title-sm">Payment method-wise</h2>
+            <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportPayments()"><i class="bi bi-download me-1"></i>All transactions CSV</button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-app table-hover">
+              <thead><tr><th>Method</th><th class="text-end">Payments</th><th class="text-end">Collected</th><th class="text-end">Refunds</th><th class="text-end">Refunded</th><th class="text-end">Tips</th><th class="text-end">Net</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let m of byMethod()" class="clickable" (click)="drill('method', m.method, 'payments')">
+                  <td class="fw-semibold">{{ m.method | label }}</td>
+                  <td class="text-end tabular">{{ m.count }}</td>
+                  <td class="text-end tabular">{{ m.collected | money }}</td>
+                  <td class="text-end tabular">{{ m.refunds }}</td>
+                  <td class="text-end tabular text-danger">{{ m.refunded ? '−' + money(m.refunded) : '—' }}</td>
+                  <td class="text-end tabular">{{ m.tips | money }}</td>
+                  <td class="text-end tabular fw-semibold">{{ m.net | money }}</td>
+                </tr>
+                <tr *ngIf="!byMethod().length"><td colspan="7"><div class="empty-state">No payments.</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card mt-3">
+          <div class="card-header"><h2 class="card-title-sm">Refunds</h2></div>
+          <div class="table-responsive">
+            <table class="table table-app">
+              <thead><tr><th>When</th><th>Order</th><th>Method</th><th>Original payment</th><th>Reason</th><th>By</th><th class="text-end">Amount</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let r of refunds()">
+                  <td class="text-nowrap">{{ r.refund.processedAt | tzDate: 'datetime' }}</td>
+                  <td><a *ngIf="r.order" [routerLink]="['/orders', r.order.id]">{{ r.order.orderNumber }}</a></td>
+                  <td>{{ r.refund.method | label }}</td>
+                  <td>{{ r.original ? money(r.original.amount) + ' · ' : '' }}<span *ngIf="r.original">{{ r.original.processedAt | tzDate: 'time' }}</span><span *ngIf="!r.original" class="text-muted">Earlier period</span></td>
+                  <td>{{ r.refund.note || '—' }}</td>
+                  <td>{{ directory.name(r.refund.processedBy) }}</td>
+                  <td class="text-end tabular text-danger fw-semibold">−{{ r.refund.amount | money }}</td>
+                </tr>
+                <tr *ngIf="!refunds().length"><td colspan="7"><div class="empty-state py-3">No refunds.</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-4">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title-sm">Cash drawer</h2></div>
+          <div class="card-body">
+            <dl class="statement">
+              <div><dt>Cash sales</dt><dd>{{ cashDrawer().sales | money }}</dd></div>
+              <div><dt>Cash tips</dt><dd>{{ cashDrawer().tips | money }}</dd></div>
+              <div><dt>Cash refunds</dt><dd class="text-danger">−{{ cashDrawer().refunds | money }}</dd></div>
+              <div class="grand"><dt>Expected in drawer</dt><dd>{{ cashDrawer().expected | money }}</dd></div>
+              <div><dt>Cash received</dt><dd>{{ cashDrawer().tendered | money }}</dd></div>
+              <div><dt>Change given</dt><dd>{{ cashDrawer().change | money }}</dd></div>
+            </dl>
+            <div class="text-muted text-xs">Add your opening float and compare with the counted cash.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ======================================================= INVENTORY & COST -->
+  <ng-container *ngIf="tab() === 'inventory'">
+    <div *ngIf="invLoading()" class="d-grid gap-3"><span class="skeleton" style="height: 92px"></span><span class="skeleton" style="height: 260px"></span></div>
+    <ng-container *ngIf="!invLoading()">
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Cost of goods sold</div><div class="kpi-value">{{ summary().cost | money }}</div>
+          <div class="kpi-foot">Ingredients used by the sales in scope</div>
+        </div></div></div>
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Food cost %</div>
+          <div class="kpi-value" [ngClass]="100 - summary().margin <= 30 ? 'text-success' : 100 - summary().margin <= 38 ? 'text-warning' : 'text-danger'">
+            {{ (summary().net ? (summary().cost / summary().net) * 100 : 0) | number: '1.0-1' }}%
+          </div>
+          <div class="kpi-foot">Cost ÷ net sales</div>
+        </div></div></div>
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Gross profit</div><div class="kpi-value">{{ summary().profit | money }}</div>
+          <div class="kpi-foot">{{ summary().margin | number: '1.0-1' }}% margin</div>
+        </div></div></div>
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Waste</div><div class="kpi-value text-danger">{{ waste().total | money }}</div>
+          <div class="kpi-foot">{{ waste().rows.length }} entries (not affected by sales filters)</div>
+        </div></div></div>
+      </div>
+      <div class="row g-3">
+        <div class="col-xl-7">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h2 class="card-title-sm">Ingredient usage (follows filters)</h2>
+              <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportInventory()"><i class="bi bi-download me-1"></i>CSV</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-app">
+                <thead><tr><th>Ingredient</th><th class="text-end">Used</th><th class="text-end">Cost</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let r of consumption()">
+                    <td class="fw-semibold">{{ r.name }}</td>
+                    <td class="text-end tabular">{{ fq(r.used) }} {{ r.unit }}</td>
+                    <td class="text-end tabular">{{ r.cost | money }}</td>
+                  </tr>
+                  <tr *ngIf="!consumption().length"><td colspan="3"><div class="empty-state">No ingredients used.</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card mt-3">
+            <div class="card-header"><h2 class="card-title-sm">Waste log</h2></div>
+            <div class="table-responsive">
+              <table class="table table-app">
+                <thead><tr><th>When</th><th>Item</th><th class="text-end">Qty</th><th>Reason</th><th class="text-end">Cost</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let w of waste().rows">
+                    <td class="text-nowrap">{{ w.occurredAt | tzDate: 'datetime' }}</td>
+                    <td>{{ w.itemName }}</td>
+                    <td class="text-end tabular">{{ fq(-w.quantity) }} {{ w.unit }}</td>
+                    <td>{{ w.reason || '—' }}</td>
+                    <td class="text-end tabular text-danger">{{ money(-(w.totalCost || 0)) }}</td>
+                  </tr>
+                  <tr *ngIf="!waste().rows.length"><td colspan="5"><div class="empty-state py-3">No waste recorded.</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-5">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <div><h2 class="card-title-sm">Stock valuation (now)</h2><div class="text-muted text-xs mt-1">{{ stock().items }} items · {{ stock().value | money }}</div></div>
+              <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportStock()"><i class="bi bi-download me-1"></i>CSV</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-app">
+                <thead><tr><th>Item</th><th class="text-end">In stock</th><th class="text-end">Value</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let i of stock().byValue">
+                    <td>{{ i.name }} <span *ngIf="i.currentStock <= i.reorderLevel" class="pill pill-danger ms-1">Low</span></td>
+                    <td class="text-end tabular">{{ fq(i.currentStock) }} {{ i.unit }}</td>
+                    <td class="text-end tabular">{{ i.stockValue ?? 0 | money }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+  </ng-container>
+
+  <!-- ======================================================= PURCHASING -->
+  <ng-container *ngIf="tab() === 'purchasing'">
+    <div *ngIf="poLoading()" class="d-grid gap-3"><span class="skeleton" style="height: 92px"></span><span class="skeleton" style="height: 220px"></span></div>
+    <ng-container *ngIf="!poLoading()">
+      <div class="d-flex align-items-center gap-2 mb-3 no-print">
+        <label class="filter-label mb-0">Supplier</label>
+        <select class="form-select form-select-sm w-auto" [ngModel]="poSupplier" (ngModelChange)="setPoSupplier($event)">
+          <option value="">All suppliers</option>
+          <option *ngFor="let s of suppliers()" [value]="s.id">{{ s.name }}</option>
+        </select>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Purchase orders</div><div class="kpi-value">{{ purchasing().count }}</div>
+          <div class="kpi-foot">{{ purchasing().drafts }} in draft</div>
+        </div></div></div>
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Ordered value</div><div class="kpi-value">{{ purchasing().ordered | money }}</div>
+          <div class="kpi-foot">Incl. tax & shipping</div>
+        </div></div></div>
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Received value</div><div class="kpi-value">{{ purchasing().received | money }}</div>
+          <div class="kpi-foot">Booked into stock</div>
+        </div></div></div>
+        <div class="col-6 col-xl-3"><div class="card kpi h-100"><div class="card-body">
+          <div class="kpi-label">Awaiting delivery</div><div class="kpi-value">{{ purchasing().outstandingValue | money }}</div>
+          <div class="kpi-foot">{{ purchasing().outstanding.length }} open PO(s)</div>
+        </div></div></div>
+      </div>
+      <div class="row g-3">
+        <div class="col-xl-5">
+          <div class="card h-100">
+            <div class="card-header"><h2 class="card-title-sm">Supplier-wise spend</h2></div>
+            <div class="card-body">
+              <div class="hbar" *ngFor="let s of bySupplier()">
+                <div class="hbar-head"><span>{{ s.name }} <span class="text-muted">· {{ s.orders }} PO</span></span><strong>{{ s.ordered | money }}</strong></div>
+                <div class="hbar-track"><span [style.width.%]="purchasing().ordered ? (s.ordered / purchasing().ordered) * 100 : 0"></span></div>
+                <div class="text-muted text-2xs mt-1">Received {{ s.received | money }}</div>
+              </div>
+              <div *ngIf="!bySupplier().length" class="text-muted">No purchase orders.</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-7">
+          <div class="card h-100">
+            <div class="card-header"><h2 class="card-title-sm">Item-wise purchases</h2></div>
+            <div class="table-responsive">
+              <table class="table table-app">
+                <thead><tr><th>Item</th><th class="text-end">Ordered</th><th class="text-end">Received</th><th class="text-end">Value</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let p of purchasedItems()">
+                    <td class="fw-semibold">{{ p.name }}</td>
+                    <td class="text-end tabular">{{ fq(p.qty) }} {{ p.unit }}</td>
+                    <td class="text-end tabular">{{ fq(p.received) }} {{ p.unit }}</td>
+                    <td class="text-end tabular">{{ p.value | money }}</td>
+                  </tr>
+                  <tr *ngIf="!purchasedItems().length"><td colspan="4"><div class="empty-state py-3">No purchases.</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h2 class="card-title-sm">Purchase orders</h2>
+              <button type="button" class="btn btn-sm btn-light border no-print" (click)="exportPurchasing()"><i class="bi bi-download me-1"></i>CSV</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-app">
+                <thead><tr><th>PO</th><th>Supplier</th><th>Created</th><th>Status</th><th class="text-end">Total</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let po of posInRange()">
+                    <td><a [routerLink]="['/purchase-orders', po.id]" class="fw-semibold">{{ po.poNumber }}</a></td>
+                    <td>{{ supplierName(po) }}</td>
+                    <td>{{ po.createdAt | tzDate: 'date' }}</td>
+                    <td>{{ po.status | label }}</td>
+                    <td class="text-end tabular">{{ po.grandTotal | money }}</td>
+                  </tr>
+                  <tr *ngIf="!posInRange().length"><td colspan="5"><div class="empty-state py-3">No purchase orders.</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+  </ng-container>
+</ng-container>

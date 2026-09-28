@@ -1,0 +1,364 @@
+<div class="pos">
+  <!-- Menu -->
+  <section class="pos-menu">
+    <div class="menu-toolbar">
+      <div class="search-box">
+        <i class="bi bi-search"></i>
+        <input
+          type="search"
+          class="form-control"
+          placeholder="Search menu by name or SKU…"
+          [ngModel]="search()"
+          (ngModelChange)="search.set($event)"
+        />
+      </div>
+    </div>
+
+    <div class="category-bar">
+      <button type="button" class="cat-chip" [class.active]="activeCategory() === 'all'" (click)="activeCategory.set('all')">
+        All <span class="count">{{ countInCategory('all') }}</span>
+      </button>
+      <button
+        type="button"
+        *ngFor="let c of categories(); trackBy: trackById"
+        class="cat-chip"
+        [class.active]="activeCategory() === c.id"
+        (click)="activeCategory.set(c.id)"
+      >
+        {{ c.name }} <span class="count">{{ countInCategory(c.id) }}</span>
+      </button>
+    </div>
+
+    <div class="menu-grid" *ngIf="loading()">
+      <span class="skeleton" style="height: 128px" *ngFor="let _ of [1, 2, 3, 4, 5, 6, 7, 8]"></span>
+    </div>
+
+    <div class="menu-grid" *ngIf="!loading()">
+      <div
+        *ngFor="let item of visibleItems(); trackBy: trackById"
+        class="menu-card"
+        [class.unavailable]="!item.isAvailable"
+        [class.in-cart]="qtyInCart(item) > 0"
+        role="button"
+        [attr.tabindex]="item.isAvailable ? 0 : -1"
+        (click)="add(item)"
+        (keydown.enter)="add(item)"
+      >
+        <span *ngIf="qtyInCart(item) > 0" class="qty-badge">{{ qtyInCart(item) }}</span>
+        <img *ngIf="item.imageUrl" class="menu-img" [src]="item.imageUrl" alt="" loading="lazy" (error)="$any($event.target).remove()" />
+        <span class="menu-card-top">
+          <span class="menu-cat">{{ categoryName(item.categoryId) }}</span>
+          <span class="menu-name">{{ item.name }}</span>
+        </span>
+        <span class="menu-card-bottom">
+          <span class="menu-price tabular">{{ item.price | money }}</span>
+          <span class="menu-meta">
+            <ng-container *ngFor="let d of item.dietary">
+              <i *ngIf="dietaryIcon(d) as icon" class="bi {{ icon }}" [attr.title]="d | label"></i>
+            </ng-container>
+            <span *ngIf="item.preparationTimeMinutes" class="text-muted"><i class="bi bi-clock"></i> {{ item.preparationTimeMinutes }}m</span>
+          </span>
+        </span>
+        <button
+          *ngIf="canCustomize(item) && item.isAvailable"
+          type="button"
+          class="customize-btn"
+          title="Customize ingredients for this order only"
+          (click)="$event.stopPropagation(); openCustomize(item)"
+        >
+          <i class="bi bi-sliders"></i>
+        </button>
+        <span *ngIf="!item.isAvailable" class="sold-out">Unavailable</span>
+      </div>
+
+      <div *ngIf="!visibleItems().length" class="empty-state grid-empty">
+        <i class="bi bi-search"></i>
+        No menu items match your search.
+      </div>
+    </div>
+  </section>
+
+  <!-- Order panel -->
+  <aside class="pos-order card">
+    <div class="order-head">
+      <ng-container *ngIf="existingOrder() as o; else newOrderHead">
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div class="min-w-0">
+            <div class="text-muted text-xs">Adding items to</div>
+            <div class="fw-semibold fs-6">
+              {{ o.orderNumber }}
+              <span *ngIf="existingTableName()" class="text-muted fw-normal"> · Table {{ existingTableName() }}</span>
+            </div>
+            <div class="text-muted text-xs"><i class="bi bi-person me-1"></i>Waiter {{ directory.name(directory.waiterOf(o)) }}</div>
+          </div>
+          <a [routerLink]="['/orders', o.id]" class="btn btn-sm btn-light border">View order</a>
+        </div>
+      </ng-container>
+
+      <ng-template #newOrderHead>
+        <div class="waiter-bar">
+          <i class="bi bi-person-badge"></i>
+          <label for="pos-waiter" class="mb-0 text-nowrap">Waiter</label>
+          <select id="pos-waiter" class="form-select form-select-sm" [(ngModel)]="waiterId">
+            <option *ngFor="let s of directory.servers()" [value]="s.userId">
+              {{ s.name }}{{ directory.isMe(s.userId) ? ' (you)' : '' }} · {{ s.role | label }}
+            </option>
+            <option *ngIf="!directory.servers().length" [value]="auth.user()?.id">{{ auth.user()?.name }} (you)</option>
+          </select>
+        </div>
+        <div class="segmented">
+          <button
+            type="button"
+            *ngFor="let t of orderTypes"
+            [class.active]="orderType === t.value"
+            (click)="orderType = t.value"
+          >
+            <i class="bi {{ t.icon }}"></i> {{ t.label }}
+          </button>
+        </div>
+
+        <div class="row g-2 mt-1" *ngIf="orderType === 'dine_in'">
+          <div class="col-8">
+            <label class="form-label text-xs text-muted mb-1">Table</label>
+            <select class="form-select form-select-sm" [ngModel]="tableId" (ngModelChange)="onTableChange($event)">
+              <option value="">No table (counter)</option>
+              <option *ngFor="let t of freeTables(); trackBy: trackById" [value]="t.id">
+                {{ t.name }} · {{ t.section }} · {{ t.capacity }} seats{{ t.status === 'reserved' ? ' (reserved)' : '' }}{{ tableWaiterName(t) }}
+              </option>
+            </select>
+          </div>
+          <div class="col-4">
+            <label class="form-label text-xs text-muted mb-1">Guests</label>
+            <input type="number" class="form-control form-control-sm" min="1" max="500" [(ngModel)]="guestCount" />
+          </div>
+        </div>
+
+        <div class="row g-2 mt-1" *ngIf="orderType !== 'dine_in'">
+          <div class="col-6">
+            <label class="form-label text-xs text-muted mb-1">Customer name</label>
+            <input class="form-control form-control-sm" maxlength="120" [(ngModel)]="customerName" placeholder="Optional" />
+          </div>
+          <div class="col-6">
+            <label class="form-label text-xs text-muted mb-1">Phone</label>
+            <input class="form-control form-control-sm" maxlength="30" [(ngModel)]="customerPhone" placeholder="Optional" />
+          </div>
+          <div class="col-12">
+            <input type="email" class="form-control form-control-sm" maxlength="254" [(ngModel)]="customerEmail" placeholder="Email for receipt (optional)" />
+          </div>
+          <ng-container *ngIf="orderType === 'delivery'">
+            <div class="col-12">
+              <input class="form-control form-control-sm" [(ngModel)]="addressLine1" placeholder="Delivery address" />
+            </div>
+            <div class="col-7">
+              <input class="form-control form-control-sm" [(ngModel)]="addressCity" placeholder="City" />
+            </div>
+            <div class="col-5">
+              <input class="form-control form-control-sm" [(ngModel)]="addressPostalCode" placeholder="Postal code" />
+            </div>
+            <div class="col-12">
+              <input class="form-control form-control-sm" maxlength="500" [(ngModel)]="deliveryNotes" placeholder="Delivery notes (gate code, floor…)" />
+            </div>
+          </ng-container>
+        </div>
+
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <label class="text-xs text-muted text-nowrap mb-0" for="pos-source">Order source</label>
+          <select id="pos-source" class="form-select form-select-sm" [(ngModel)]="source">
+            <option *ngFor="let s of sources" [value]="s">{{ s === 'pos' ? 'Counter / POS' : s === 'qr' ? 'QR code' : (s | label) }}</option>
+          </select>
+        </div>
+      </ng-template>
+    </div>
+
+    <!-- Cart -->
+    <div class="order-lines">
+      <div *ngIf="!cart().length" class="empty-state">
+        <i class="bi bi-basket"></i>
+        <div class="fw-medium text-body">No items yet</div>
+        <div class="text-xs">Tap a menu item to add it to the order.</div>
+      </div>
+
+      <div class="line" *ngFor="let line of cart(); trackBy: trackByKey">
+        <div class="d-flex align-items-start gap-2">
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-medium text-truncate">{{ line.item.name }}</div>
+            <div class="text-muted text-xs">
+              {{ line.item.price | money }} each
+              <span *ngIf="modifierDelta(line)"> + {{ modifierDelta(line) | money }} customization</span>
+            </div>
+            <div *ngIf="line.modifiers.length" class="modifier-chips">
+              <span class="modifier-chip" *ngFor="let m of line.modifiers" [class.remove]="m.action === 'remove'">
+                <i class="bi" [class.bi-dash-circle]="m.action === 'remove'" [class.bi-plus-circle]="m.action === 'add'"></i>
+                {{ modifierLabel(m) }}
+              </span>
+            </div>
+          </div>
+          <div class="text-end">
+            <div class="fw-semibold tabular text-nowrap">{{ lineTotal(line) | money }}</div>
+            <div *ngIf="discountCents(line)" class="text-success text-2xs tabular">−{{ discountCents(line) | money }} off</div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center justify-content-between mt-2">
+          <div class="stepper">
+            <button type="button" (click)="changeQty(line, -1)" aria-label="Decrease"><i class="bi bi-dash"></i></button>
+            <span class="tabular">{{ line.quantity }}</span>
+            <button type="button" (click)="changeQty(line, 1)" aria-label="Increase"><i class="bi bi-plus"></i></button>
+          </div>
+          <div class="d-flex gap-1">
+            <button *ngIf="canCustomize(line.item)" type="button" class="btn btn-sm btn-link text-decoration-none px-2" (click)="editCustomize(line)">
+              <i class="bi bi-sliders me-1"></i>{{ line.modifiers.length ? 'Edit' : 'Customize' }}
+            </button>
+            <button type="button" class="btn btn-sm btn-link text-decoration-none px-2" (click)="toggleNotes(line)">
+              <i class="bi bi-pencil-square me-1"></i>{{ line.notes ? 'Edit note' : 'Note' }}
+            </button>
+            <button type="button" class="btn btn-sm btn-link text-decoration-none px-2" (click)="toggleDiscount(line)">
+              <i class="bi bi-percent me-1"></i>Discount
+            </button>
+            <button type="button" class="btn btn-sm btn-link text-danger px-2" (click)="remove(line)" aria-label="Remove">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </div>
+        </div>
+        <input
+          *ngIf="line.showNotes"
+          class="form-control form-control-sm mt-2"
+          maxlength="300"
+          placeholder="e.g. medium rare"
+          [ngModel]="line.notes"
+          (ngModelChange)="setNotes(line, $event)"
+        />
+        <div *ngIf="line.showDiscount" class="input-group input-group-sm mt-2">
+          <span class="input-group-text">Discount {{ auth.currency() }}</span>
+          <input
+            type="number"
+            class="form-control"
+            min="0"
+            step="0.01"
+            [max]="lineGross(line) / 100"
+            placeholder="Amount off this line"
+            [ngModel]="line.discount"
+            (ngModelChange)="setDiscount(line, $event)"
+          />
+        </div>
+        <div *ngIf="!line.showNotes && line.notes" class="line-note"><i class="bi bi-chat-left-text me-1"></i>{{ line.notes }}</div>
+      </div>
+    </div>
+
+    <!-- Totals & actions -->
+    <div class="order-foot">
+      <input
+        *ngIf="!existingOrder()"
+        class="form-control form-control-sm mb-3"
+        maxlength="1000"
+        [(ngModel)]="orderNotes"
+        placeholder="Order note (optional)"
+      />
+      <dl class="totals">
+        <div><dt>Subtotal · {{ itemCount() }} item{{ itemCount() === 1 ? '' : 's' }}</dt><dd>{{ totals().subtotal | money }}</dd></div>
+        <div *ngIf="totals().discount"><dt>Discounts</dt><dd class="text-success">−{{ totals().discount | money }}</dd></div>
+        <div><dt>Tax{{ auth.tenant()?.tax?.pricesIncludeTax ? ' (included)' : '' }}</dt><dd>{{ totals().tax | money }}</dd></div>
+        <div *ngIf="totals().service"><dt>Service charge</dt><dd>{{ totals().service | money }}</dd></div>
+        <div class="grand"><dt>Estimated total</dt><dd>{{ totals().total | money }}</dd></div>
+      </dl>
+      <div class="text-muted text-2xs mb-3">Final totals are calculated by the server when the order is saved.</div>
+
+      <div class="d-grid gap-2">
+        <button type="button" class="btn btn-primary btn-lg" [disabled]="!cart().length || !!submitting" (click)="submit(true)">
+          <span *ngIf="submitting === 'send'" class="spinner-border spinner-border-sm me-2"></span>
+          <i *ngIf="submitting !== 'send'" class="bi bi-send me-2"></i>{{ existingOrder() ? 'Add & send to kitchen' : 'Send to kitchen' }}
+        </button>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-light border flex-grow-1" [disabled]="!cart().length || !!submitting" (click)="submit(false)">
+            <span *ngIf="submitting === 'save'" class="spinner-border spinner-border-sm me-2"></span>
+            {{ existingOrder() ? 'Add items only' : 'Save as open order' }}
+          </button>
+          <button type="button" class="btn btn-light border" [disabled]="!cart().length || !!submitting" (click)="clear()" title="Clear cart">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Customize: per-line ingredient add/remove. The menu recipe itself is never changed. -->
+<app-modal
+  [open]="!!customizeItem"
+  [title]="'Customize ' + (customizeItem?.name ?? '')"
+  subtitle="Only this order line is affected — the menu recipe stays the same."
+  size="md"
+  [dismissible]="false"
+  (closed)="closeCustomize()"
+>
+  <ng-container *ngIf="customizeItem as ci">
+    <div class="section-title">Adjust ingredients</div>
+    <div class="text-muted text-xs mb-2" *ngIf="customizeRecipe.length">Set less (down to 0 for none) or more of anything already in this recipe.</div>
+    <div class="customize-list" *ngIf="customizeRecipe.length; else noRecipe">
+      <div class="adjust-row" *ngFor="let r of customizeRecipe">
+        <span class="adjust-name text-truncate" [class.text-muted]="r.desiredQty === r.baseQty">{{ r.name }}</span>
+        <div class="input-group input-group-sm">
+          <input type="number" class="form-control" min="0" step="any" [(ngModel)]="r.desiredQty" />
+          <span class="input-group-text">{{ r.unit }}</span>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-link px-1"
+          [disabled]="r.desiredQty === r.baseQty"
+          [title]="'Reset to recipe amount (' + fq(r.baseQty) + ' ' + r.unit + ')'"
+          (click)="resetRow(r)"
+        >
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+      </div>
+    </div>
+    <ng-template #noRecipe><div class="text-muted text-xs mb-2">This item has no listed ingredients.</div></ng-template>
+
+    <div class="section-title d-flex justify-content-between align-items-center">
+      <span>Add extra</span>
+      <button type="button" class="btn btn-sm btn-light border text-none" (click)="addExtraRow()"><i class="bi bi-plus-lg me-1"></i>Add ingredient</button>
+    </div>
+    <div *ngIf="!customizeExtras.length" class="text-muted text-xs mb-2">e.g. +2 egg, extra cheese…</div>
+    <div class="extra-row" *ngFor="let e of customizeExtras; let i = index">
+      <select class="form-select form-select-sm" [(ngModel)]="e.inventoryItemId">
+        <option value="" disabled>Choose ingredient…</option>
+        <option *ngFor="let inv of extraChoices()" [value]="inv.id">{{ inv.name }}</option>
+      </select>
+      <div class="input-group input-group-sm">
+        <input type="number" class="form-control" min="0" step="any" placeholder="Qty" [(ngModel)]="e.quantity" />
+        <span class="input-group-text">{{ invUnit(e.inventoryItemId) || 'unit' }}</span>
+      </div>
+      <div class="input-group input-group-sm">
+        <span class="input-group-text">{{ auth.currency() }}</span>
+        <input
+          type="number"
+          class="form-control"
+          min="0"
+          step="0.01"
+          placeholder="Price"
+          [ngModel]="fromCents(e.priceDelta)"
+          (ngModelChange)="setExtraPrice(e, $event)"
+        />
+      </div>
+      <button type="button" class="btn btn-sm btn-link text-danger px-1" (click)="removeExtraRow(i)" aria-label="Remove row"><i class="bi bi-x-lg"></i></button>
+    </div>
+
+    <div class="section-title">Quantity</div>
+    <div class="stepper mb-3">
+      <button type="button" (click)="incCustomizeQty(-1)" aria-label="Decrease"><i class="bi bi-dash"></i></button>
+      <span class="tabular">{{ customizeQty }}</span>
+      <button type="button" (click)="incCustomizeQty(1)" aria-label="Increase"><i class="bi bi-plus"></i></button>
+    </div>
+
+    <div class="customize-price">
+      <span>Price per portion</span>
+      <strong>{{ customizeUnitPrice() | money }}</strong>
+    </div>
+  </ng-container>
+
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="closeCustomize()">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="addCustomizedToCart()">
+      Add to order · {{ customizeUnitPrice() * customizeQty | money }}
+    </button>
+  </ng-container>
+</app-modal>

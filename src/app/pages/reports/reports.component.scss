@@ -1,0 +1,315 @@
+.report-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+// ---- Filter bar --------------------------------------------------------------
+.filter-card {
+  background: #fbfcfe;
+}
+
+.filter-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.filter-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+  margin-bottom: 0.25rem;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.375rem 0.25rem 0.625rem;
+  border-radius: 999px;
+  background: #eaf0fc;
+  color: #1e3a8a;
+  font-size: 0.75rem;
+  font-weight: 500;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: 0;
+    background: rgba(30, 58, 138, 0.12);
+    border-radius: 50%;
+    color: inherit;
+    font-size: 0.7rem;
+
+    &:hover {
+      background: rgba(30, 58, 138, 0.22);
+    }
+  }
+}
+
+// ---- Sortable tables ----------------------------------------------------------------
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+
+  &:hover {
+    color: #0f172a;
+  }
+
+  i {
+    font-size: 0.7rem;
+    margin-left: 0.125rem;
+  }
+}
+
+.pager-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--app-border);
+}
+
+.waiter-block + .waiter-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--app-border);
+}
+
+.item-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.75rem;
+
+  strong {
+    color: #0f172a;
+  }
+}
+
+.kpi .card-body {
+  padding: 1.125rem 1.25rem;
+}
+
+.kpi-label {
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.kpi-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpi-foot {
+  margin-top: 0.625rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #e3e8ef;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+// ---- Vertical bar chart --------------------------------------------------------
+.vbars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 240px;
+  padding-top: 1.25rem;
+
+  &.dense {
+    gap: 3px;
+
+    .vbar-label {
+      font-size: 0.6rem;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      height: 34px;
+    }
+  }
+}
+
+.vbar {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.vbar-value {
+  font-size: 0.65rem;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vbar-fill {
+  width: 100%;
+  max-width: 56px;
+  min-height: 2px;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, #4b76d8, #2b59c3);
+  transition: height 0.3s ease;
+
+  &.alt {
+    background: linear-gradient(180deg, #1c9bb3, #0e7490);
+  }
+}
+
+.vbar-label {
+  font-size: 0.7rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+// ---- Horizontal bars -------------------------------------------------------------
+.hbar + .hbar {
+  margin-top: 0.875rem;
+}
+
+.hbar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.375rem;
+
+  strong {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.hbar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #eef1f6;
+  overflow: hidden;
+
+  span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: #2b59c3;
+
+    &.alt {
+      background: #0e7490;
+    }
+  }
+}
+
+.share {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .hbar-track {
+    flex: 1;
+    height: 6px;
+  }
+
+  > span {
+    width: 42px;
+    font-size: 0.72rem;
+    color: #64748b;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// ---- Statement (P&L style) -------------------------------------------------------------
+.statement {
+  margin: 0 0 0.5rem;
+
+  > div {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    color: #475569;
+  }
+
+  dt {
+    font-weight: 400;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .subtotal {
+    border-top: 1px solid var(--app-border);
+    color: #0f172a;
+    font-weight: 600;
+  }
+
+  .grand {
+    border-top: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--app-border);
+    margin: 0.25rem 0;
+    padding: 0.6rem 0;
+    color: #0f172a;
+    font-size: 1.0625rem;
+    font-weight: 700;
+
+    dt {
+      font-weight: 700;
+    }
+  }
+}
+
+tfoot td {
+  background: #f8fafc;
+  border-top: 1px solid var(--app-border);
+}
+
+.print-head {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #0f172a;
+}
+
+@media print {
+  .card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .vbar-fill,
+  .hbar-track span {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

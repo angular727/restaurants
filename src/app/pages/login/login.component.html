@@ -1,0 +1,136 @@
+<div class="auth-page">
+  <!-- Brand panel -->
+  <aside class="brand-panel d-none d-lg-flex">
+    <div class="brand-top">
+      <div class="logo">
+        <span class="logo-mark"><i class="bi bi-layers-fill"></i></span>
+        <span class="logo-text">{{ appName }}</span>
+      </div>
+    </div>
+
+    <div class="brand-body">
+      <h2>Run every shift from one place.</h2>
+      <p class="lead-text">
+        Point of sale, kitchen display, inventory and purchasing, connected in real time for every restaurant you manage.
+      </p>
+
+      <ul class="feature-list">
+        <li>
+          <span class="feature-icon"><i class="bi bi-lightning-charge"></i></span>
+          <div>
+            <strong>Fast service</strong>
+            <span>Take orders, fire to the kitchen and settle bills in seconds.</span>
+          </div>
+        </li>
+        <li>
+          <span class="feature-icon"><i class="bi bi-box-seam"></i></span>
+          <div>
+            <strong>Live stock</strong>
+            <span>Ingredients are deducted by recipe the moment an order is sent.</span>
+          </div>
+        </li>
+        <li>
+          <span class="feature-icon"><i class="bi bi-shield-check"></i></span>
+          <div>
+            <strong>Role-based access</strong>
+            <span>Owners, managers, cashiers, waiters and chefs see only what they need.</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="brand-foot">© {{ year }} {{ appName }}. All rights reserved.</div>
+  </aside>
+
+  <!-- Form panel -->
+  <main class="form-panel">
+    <div class="form-wrap">
+      <div class="logo d-lg-none mb-4">
+        <span class="logo-mark"><i class="bi bi-layers-fill"></i></span>
+        <span class="logo-text text-dark">{{ appName }}</span>
+      </div>
+
+      <h1 class="h3 mb-1">Sign in</h1>
+      <p class="text-muted mb-4">Welcome back. Enter your work email to continue.</p>
+
+      <div *ngIf="expired && !error" class="alert alert-warning d-flex gap-2 align-items-start py-2 px-3" role="alert">
+        <i class="bi bi-clock-history mt-1"></i>
+        <span>Your session has expired. Please sign in again.</span>
+      </div>
+
+      <div *ngIf="error" class="alert alert-danger d-flex gap-2 align-items-start py-2 px-3" role="alert">
+        <i class="bi bi-exclamation-circle mt-1"></i>
+        <span>{{ error }}</span>
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="mb-3">
+          <label for="email" class="form-label fw-medium">Email address</label>
+          <div class="input-icon">
+            <i class="bi bi-envelope"></i>
+            <input
+              id="email"
+              type="email"
+              class="form-control form-control-lg"
+              formControlName="email"
+              placeholder="name@company.com"
+              autocomplete="username"
+              [class.is-invalid]="invalid('email')"
+            />
+          </div>
+          <div *ngIf="invalid('email')" class="invalid-feedback d-block">Enter a valid email address.</div>
+        </div>
+
+        <div class="mb-4">
+          <label for="password" class="form-label fw-medium">Password</label>
+          <div class="input-icon">
+            <i class="bi bi-lock"></i>
+            <input
+              id="password"
+              [type]="showPassword ? 'text' : 'password'"
+              class="form-control form-control-lg pe-5"
+              formControlName="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              [class.is-invalid]="invalid('password')"
+            />
+            <button
+              type="button"
+              class="toggle-visibility"
+              (click)="showPassword = !showPassword"
+              [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+            >
+              <i class="bi" [class.bi-eye]="!showPassword" [class.bi-eye-slash]="showPassword"></i>
+            </button>
+          </div>
+          <div *ngIf="invalid('password')" class="invalid-feedback d-block">Password is required.</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg w-100" [disabled]="submitting">
+          <span *ngIf="submitting" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          {{ submitting ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </form>
+
+      <div *ngIf="showDemo" class="demo-box mt-4">
+        <div class="d-flex align-items-center justify-content-between gap-3">
+          <div class="min-w-0">
+            <div class="fw-semibold text-xs text-uppercase text-muted mb-1">Demo account</div>
+            <div class="text-truncate">owner&#64;goldenfork.test</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" (click)="fillDemo()">
+            <i class="bi bi-magic me-1"></i>Use demo
+          </button>
+        </div>
+      </div>
+
+      <p class="text-center text-muted mt-4 mb-0">
+        New to {{ appName }}? <a routerLink="/register" class="fw-medium">Create a restaurant</a>
+      </p>
+
+      <p class="text-muted text-xs mt-3 mb-0 text-center">
+        <i class="bi bi-shield-lock me-1"></i>Secured connection. Your session expires automatically after inactivity.
+      </p>
+    </div>
+  </main>
+</div>

@@ -1,0 +1,404 @@
+<div class="page-header">
+  <div>
+    <h1>Inventory</h1>
+    <p>Ingredient stock, reorder alerts and the full movement ledger.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-light border" (click)="load()" [disabled]="loading()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    <button *ngIf="tab() === 'items' && canEditItems()" type="button" class="btn btn-primary" (click)="newItem()">
+      <i class="bi bi-plus-lg me-1"></i>New item
+    </button>
+    <button *ngIf="tab() === 'categories' && canEditItems()" type="button" class="btn btn-primary" (click)="newCategory()">
+      <i class="bi bi-plus-lg me-1"></i>New category
+    </button>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="card"><div class="card-body d-flex align-items-center gap-3">
+      <span class="icon-tile tile-primary"><i class="bi bi-box-seam"></i></span>
+      <div><div class="text-muted text-xs">Active items</div><div class="fs-5 fw-bold tabular">{{ totals().count }}</div></div>
+    </div></div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card"><div class="card-body d-flex align-items-center gap-3">
+      <span class="icon-tile tile-success"><i class="bi bi-currency-exchange"></i></span>
+      <div><div class="text-muted text-xs">Stock value (avg. cost)</div><div class="fs-5 fw-bold tabular">{{ totals().value | money }}</div></div>
+    </div></div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card clickable" (click)="tab.set('items'); stockFilter.set('low')"><div class="card-body d-flex align-items-center gap-3">
+      <span class="icon-tile" [class.tile-danger]="totals().low" [class.tile-success]="!totals().low"><i class="bi bi-exclamation-triangle"></i></span>
+      <div><div class="text-muted text-xs">At or below reorder level</div><div class="fs-5 fw-bold tabular" [class.text-danger]="totals().low">{{ totals().low }}</div></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="nav-tabs-app">
+  <button type="button" [class.active]="tab() === 'items'" (click)="tab.set('items')">Items <span class="text-muted">({{ items().length }})</span></button>
+  <button type="button" [class.active]="tab() === 'categories'" (click)="tab.set('categories')">Categories <span class="text-muted">({{ categories().length }})</span></button>
+</div>
+
+<!-- ================= Items ================= -->
+<div class="card" *ngIf="tab() === 'items'">
+  <div class="toolbar">
+    <div class="search">
+      <i class="bi bi-search"></i>
+      <input class="form-control form-control-sm" placeholder="Search name or SKU" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+    </div>
+    <select class="form-select form-select-sm w-auto" [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
+      <option value="">All categories</option>
+      <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+    </select>
+    <select class="form-select form-select-sm w-auto" [ngModel]="stockFilter()" (ngModelChange)="stockFilter.set($event)">
+      <option value="all">All items</option>
+      <option value="low">Low stock</option>
+      <option value="inactive">Inactive</option>
+    </select>
+    <span class="ms-auto text-muted text-xs">{{ filtered().length }} items</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-app table-hover">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Category</th>
+          <th style="min-width: 180px">In stock</th>
+          <th class="text-end">Reorder at</th>
+          <th class="text-end">Avg. cost / unit</th>
+          <th class="text-end">Value</th>
+          <th class="text-end"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <ng-container *ngIf="loading()">
+          <tr *ngFor="let _ of [1, 2, 3, 4, 5]"><td colspan="7"><span class="skeleton" style="height: 18px"></span></td></tr>
+        </ng-container>
+        <ng-container *ngIf="!loading()">
+          <tr *ngFor="let i of filtered(); trackBy: trackById" [class.text-muted]="!i.isActive">
+            <td>
+              <div class="fw-semibold">{{ i.name }}</div>
+              <div class="text-muted text-xs">
+                <span *ngIf="i.sku">{{ i.sku }}</span>
+                <span *ngIf="i.storageLocation"> · {{ i.storageLocation }}</span>
+                <span *ngIf="!i.isActive" class="pill pill-neutral ms-1">Inactive</span>
+                <span *ngIf="i.isPerishable" class="ms-1" title="Perishable"><i class="bi bi-snow2"></i></span>
+              </div>
+            </td>
+            <td>{{ categoryName(i.categoryId) }}</td>
+            <td>
+              <div class="d-flex justify-content-between">
+                <span class="fw-semibold tabular" [class.text-danger]="isLow(i)">{{ formatQty(i.currentStock) }} {{ i.unit }}</span>
+                <span *ngIf="isLow(i)" class="pill pill-danger">Low</span>
+              </div>
+              <div class="progress mt-1" style="height: 4px">
+                <div class="progress-bar" [class.bg-danger]="isLow(i)" [class.bg-success]="!isLow(i)" [style.width.%]="stockPct(i)"></div>
+              </div>
+            </td>
+            <td class="text-end tabular">{{ formatQty(i.reorderLevel) }} {{ i.unit }}</td>
+            <td class="text-end tabular">{{ unitCost(i) | money }}</td>
+            <td class="text-end tabular fw-medium">{{ i.stockValue ?? 0 | money }}</td>
+            <td class="row-actions">
+              <button type="button" class="btn btn-sm btn-link" title="Movement history" (click)="openMovements(i)"><i class="bi bi-clock-history"></i></button>
+              <div class="dropdown d-inline-block" *ngIf="canMoveStock() || canEditItems() || canReconcile()">
+                <button class="btn btn-sm btn-link" data-bs-toggle="dropdown" aria-label="Item actions"><i class="bi bi-three-dots-vertical"></i></button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                  <ng-container *ngIf="canMoveStock()">
+                    <li><button class="dropdown-item" type="button" (click)="openAdjust(i, 'waste')"><i class="bi bi-trash2 me-2"></i>Record waste</button></li>
+                    <li><button class="dropdown-item" type="button" (click)="openAdjust(i, 'adjustment')"><i class="bi bi-plus-slash-minus me-2"></i>Adjust stock</button></li>
+                    <li><button class="dropdown-item" type="button" (click)="openAdjust(i, 'opening_balance')"><i class="bi bi-box-arrow-in-down me-2"></i>Opening balance</button></li>
+                    <li><button class="dropdown-item" type="button" (click)="openCount(i)"><i class="bi bi-clipboard-data me-2"></i>Stock count</button></li>
+                  </ng-container>
+                  <li *ngIf="canReconcile()"><button class="dropdown-item" type="button" (click)="reconcile(i)"><i class="bi bi-check2-square me-2"></i>Check ledger</button></li>
+                  <ng-container *ngIf="canEditItems()">
+                    <li><hr class="dropdown-divider" /></li>
+                    <li><button class="dropdown-item" type="button" (click)="editItem(i)"><i class="bi bi-pencil me-2"></i>Edit item</button></li>
+                    <li><button class="dropdown-item text-danger" type="button" (click)="deleteItem(i)"><i class="bi bi-trash3 me-2"></i>Delete</button></li>
+                  </ng-container>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="!filtered().length">
+            <td colspan="7"><div class="empty-state"><i class="bi bi-box-seam"></i>No inventory items found.</div></td>
+          </tr>
+        </ng-container>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ================= Categories ================= -->
+<div class="card" *ngIf="tab() === 'categories'">
+  <div class="table-responsive">
+    <table class="table table-app table-hover">
+      <thead><tr><th style="width: 60px">Order</th><th>Category</th><th>Parent</th><th class="text-center">Items</th><th class="text-end"></th></tr></thead>
+      <tbody>
+        <tr *ngFor="let c of categories(); trackBy: trackById">
+          <td class="text-muted tabular">{{ c.sortOrder }}</td>
+          <td><div class="fw-semibold">{{ c.name }}</div><div class="text-muted text-xs" *ngIf="c.description">{{ c.description }}</div></td>
+          <td>{{ c.parentId ? categoryName(c.parentId) : '—' }}</td>
+          <td class="text-center tabular">{{ itemsInCategory(c.id) }}</td>
+          <td class="row-actions">
+            <ng-container *ngIf="canEditItems()">
+              <button type="button" class="btn btn-sm btn-link" (click)="editCategory(c)" title="Edit"><i class="bi bi-pencil"></i></button>
+              <button type="button" class="btn btn-sm btn-link text-danger" (click)="deleteCategory(c)" title="Delete"><i class="bi bi-trash3"></i></button>
+            </ng-container>
+          </td>
+        </tr>
+        <tr *ngIf="!categories().length && !loading()"><td colspan="5"><div class="empty-state"><i class="bi bi-folder2"></i>No categories yet.</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ================= Item dialog ================= -->
+<app-modal [open]="showItemForm" [title]="editingItem ? 'Edit ' + editingItem.name : 'New inventory item'" size="lg" [dismissible]="false" (closed)="showItemForm = false">
+  <div class="section-title">Item</div>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label fw-medium required">Name</label>
+      <input class="form-control" maxlength="120" [(ngModel)]="itemForm.name" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-medium">SKU</label>
+      <input class="form-control text-uppercase" maxlength="40" [(ngModel)]="itemForm.sku" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-medium">Barcode</label>
+      <input class="form-control" maxlength="64" [(ngModel)]="itemForm.barcode" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label fw-medium">Category</label>
+      <select class="form-select" [(ngModel)]="itemForm.categoryId">
+        <option value="">No category</option>
+        <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label fw-medium">Storage location</label>
+      <input class="form-control" maxlength="60" [(ngModel)]="itemForm.storageLocation" placeholder="e.g. Walk-in cooler" />
+    </div>
+    <div class="col-12">
+      <label class="form-label fw-medium">Description</label>
+      <textarea class="form-control" rows="2" maxlength="500" [(ngModel)]="itemForm.description"></textarea>
+    </div>
+  </div>
+
+  <div class="section-title">Units</div>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label fw-medium required">Stock unit</label>
+      <select class="form-select" [(ngModel)]="itemForm.unit" [disabled]="!!editingItem && editingItem.currentStock !== 0">
+        <option *ngFor="let u of units" [value]="u">{{ u }}</option>
+      </select>
+      <div *ngIf="editingItem && editingItem.currentStock !== 0" class="text-muted text-xs mt-1">Locked while the item has stock.</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-medium">Purchase unit</label>
+      <input class="form-control" maxlength="30" [(ngModel)]="itemForm.purchaseUnitName" placeholder="e.g. case, sack" />
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-medium">{{ itemForm.unit }} per purchase unit</label>
+      <input type="number" class="form-control" min="0.0001" step="any" [(ngModel)]="itemForm.purchaseUnitFactor" />
+    </div>
+  </div>
+
+  <div class="section-title">Reordering</div>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label fw-medium">Reorder level</label>
+      <div class="input-group"><input type="number" class="form-control" min="0" step="any" [(ngModel)]="itemForm.reorderLevel" /><span class="input-group-text">{{ itemForm.unit }}</span></div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-medium">Reorder quantity</label>
+      <div class="input-group"><input type="number" class="form-control" min="0" step="any" [(ngModel)]="itemForm.reorderQuantity" /><span class="input-group-text">{{ itemForm.unit }}</span></div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-medium">Par level</label>
+      <div class="input-group"><input type="number" class="form-control" min="0" step="any" [(ngModel)]="itemForm.parLevel" /><span class="input-group-text">{{ itemForm.unit }}</span></div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label fw-medium">Preferred supplier</label>
+      <select class="form-select" [(ngModel)]="itemForm.preferredSupplierId">
+        <option value="">None</option>
+        <option *ngFor="let s of suppliers()" [value]="s.id">{{ s.name }}</option>
+      </select>
+    </div>
+    <div class="col-md-6 d-flex align-items-end gap-3">
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" id="inv-per" [(ngModel)]="itemForm.isPerishable" />
+        <label class="form-check-label" for="inv-per">Perishable</label>
+      </div>
+      <div class="input-group input-group-sm mb-1" *ngIf="itemForm.isPerishable" style="max-width: 190px">
+        <input type="number" class="form-control" min="0" [(ngModel)]="itemForm.shelfLifeDays" placeholder="Shelf life" />
+        <span class="input-group-text">days</span>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="inv-active" [(ngModel)]="itemForm.isActive" />
+        <label class="form-check-label" for="inv-active">Active</label>
+      </div>
+    </div>
+  </div>
+  <div *ngIf="!editingItem" class="alert alert-info py-2 px-3 mt-3 mb-0 text-xs">
+    <i class="bi bi-info-circle me-1"></i>New items start with zero stock. Use <strong>Opening balance</strong> or receive a purchase order to add stock.
+  </div>
+  <div *ngIf="itemError" class="alert alert-danger py-2 px-3 mt-3 mb-0">{{ itemError }}</div>
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="showItemForm = false" [disabled]="saving">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
+      <span *ngIf="saving" class="spinner-border spinner-border-sm me-2"></span>{{ editingItem ? 'Save changes' : 'Create item' }}
+    </button>
+  </ng-container>
+</app-modal>
+
+<!-- ================= Adjust dialog ================= -->
+<app-modal [open]="!!adjustItem" title="Stock movement" [subtitle]="(adjustItem?.name ?? '') + ' · currently ' + formatQty(adjustItem?.currentStock) + ' ' + (adjustItem?.unit ?? '')" size="sm" [dismissible]="false" (closed)="adjustItem = null">
+  <div class="mb-3">
+    <label class="form-label fw-medium">Type</label>
+    <select class="form-select" [(ngModel)]="adjustType">
+      <option *ngFor="let t of manualTypes" [value]="t">{{ t | label }}</option>
+    </select>
+    <div class="text-muted text-xs mt-1">
+      {{ adjustDirection() === 'in' ? 'Adds to stock.' : adjustDirection() === 'out' ? 'Removes from stock.' : 'Use a negative number to reduce stock.' }}
+    </div>
+  </div>
+  <div class="mb-3">
+    <label class="form-label fw-medium required">Quantity</label>
+    <div class="input-group">
+      <input type="number" class="form-control" step="any" [(ngModel)]="adjustQty" />
+      <span class="input-group-text">{{ adjustItem?.unit }}</span>
+    </div>
+  </div>
+  <div class="mb-3" *ngIf="adjustType === 'opening_balance'">
+    <label class="form-label fw-medium">Cost per {{ adjustItem?.unit }} <span class="text-muted fw-normal">(optional)</span></label>
+    <div class="input-group">
+      <span class="input-group-text">{{ auth.currency() }}</span>
+      <input type="number" class="form-control" min="0" step="any" [(ngModel)]="adjustUnitCost" />
+    </div>
+    <div class="text-muted text-xs mt-1">Sets the average cost used for food costing.</div>
+  </div>
+  <div class="mb-3">
+    <label class="form-label fw-medium">Reason</label>
+    <input class="form-control" maxlength="500" [(ngModel)]="adjustReason" placeholder="e.g. Dropped tray, spoiled" />
+  </div>
+  <div class="projection">
+    <span>Stock after</span>
+    <strong class="tabular" [class.text-danger]="projectedStock() < 0">{{ formatQty(projectedStock()) }} {{ adjustItem?.unit }}</strong>
+  </div>
+  <div *ngIf="adjustError" class="alert alert-danger py-2 px-3 mt-3 mb-0">{{ adjustError }}</div>
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="adjustItem = null" [disabled]="saving">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="saveAdjust()" [disabled]="saving">
+      <span *ngIf="saving" class="spinner-border spinner-border-sm me-2"></span>Record
+    </button>
+  </ng-container>
+</app-modal>
+
+<!-- ================= Count dialog ================= -->
+<app-modal [open]="!!countItem" title="Stock count" [subtitle]="(countItem?.name ?? '') + ' · system shows ' + formatQty(countItem?.currentStock) + ' ' + (countItem?.unit ?? '')" size="sm" [dismissible]="false" (closed)="countItem = null">
+  <div class="mb-3">
+    <label class="form-label fw-medium required">Counted quantity</label>
+    <div class="input-group">
+      <input type="number" class="form-control" min="0" step="any" [(ngModel)]="countQty" />
+      <span class="input-group-text">{{ countItem?.unit }}</span>
+    </div>
+  </div>
+  <div class="mb-3">
+    <label class="form-label fw-medium">Note</label>
+    <input class="form-control" maxlength="500" [(ngModel)]="countReason" placeholder="Stock count" />
+  </div>
+  <div class="projection">
+    <span>Variance</span>
+    <strong class="tabular" [class.text-danger]="countVariance() < 0" [class.text-success]="countVariance() > 0">
+      {{ countVariance() > 0 ? '+' : '' }}{{ formatQty(countVariance()) }} {{ countItem?.unit }}
+    </strong>
+  </div>
+  <div *ngIf="countError" class="alert alert-danger py-2 px-3 mt-3 mb-0">{{ countError }}</div>
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="countItem = null" [disabled]="saving">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="saveCount()" [disabled]="saving">
+      <span *ngIf="saving" class="spinner-border spinner-border-sm me-2"></span>Save count
+    </button>
+  </ng-container>
+</app-modal>
+
+<!-- ================= Movements dialog ================= -->
+<app-modal [open]="!!movementsItem" [title]="'Movement history · ' + (movementsItem?.name ?? '')" subtitle="Newest first. Every change to stock is recorded here." size="xl" (closed)="movementsItem = null">
+  <div class="d-flex gap-2 mb-3 align-items-center">
+    <select class="form-select form-select-sm w-auto" [(ngModel)]="movementType" (ngModelChange)="movementPage = 1; loadMovements()">
+      <option value="">All types</option>
+      <option *ngFor="let t of movementTypes" [value]="t">{{ t | label }}</option>
+    </select>
+    <span class="ms-auto text-muted text-xs">Current stock: <strong class="text-body">{{ formatQty(movementsItem?.currentStock) }} {{ movementsItem?.unit }}</strong></span>
+  </div>
+  <div class="table-responsive border rounded">
+    <table class="table table-app">
+      <thead>
+        <tr><th>When</th><th>Type</th><th>Reason / reference</th><th class="text-end">Change</th><th class="text-end">Balance</th><th class="text-end">Cost</th></tr>
+      </thead>
+      <tbody>
+        <ng-container *ngIf="movementsLoading">
+          <tr *ngFor="let _ of [1, 2, 3]"><td colspan="6"><span class="skeleton" style="height: 18px"></span></td></tr>
+        </ng-container>
+        <ng-container *ngIf="!movementsLoading">
+          <tr *ngFor="let m of movements">
+            <td class="text-nowrap">{{ m.occurredAt | tzDate: 'datetime' }}</td>
+            <td><span class="pill" [class.pill-success]="isInbound(m)" [class.pill-danger]="!isInbound(m)">{{ m.type | label }}</span></td>
+            <td class="text-muted">{{ m.reason || (m.reference?.kind | label) }}</td>
+            <td class="text-end tabular fw-semibold" [class.text-success]="isInbound(m)" [class.text-danger]="!isInbound(m)">
+              {{ isInbound(m) ? '+' : '' }}{{ formatQty(m.quantity) }} {{ m.unit }}
+            </td>
+            <td class="text-end tabular">{{ formatQty(m.balanceAfter) }}</td>
+            <td class="text-end tabular">{{ m.totalCost ? (m.totalCost | money) : '—' }}</td>
+          </tr>
+          <tr *ngIf="!movements.length"><td colspan="6"><div class="empty-state py-4">No movements.</div></td></tr>
+        </ng-container>
+      </tbody>
+    </table>
+  </div>
+  <div class="d-flex justify-content-end gap-2 mt-3">
+    <button type="button" class="btn btn-sm btn-light border" [disabled]="movementPage <= 1 || movementsLoading" (click)="movementPage = movementPage - 1; loadMovements()">
+      <i class="bi bi-chevron-left"></i> Newer
+    </button>
+    <button type="button" class="btn btn-sm btn-light border" [disabled]="movements.length < movementLimit || movementsLoading" (click)="movementPage = movementPage + 1; loadMovements()">
+      Older <i class="bi bi-chevron-right"></i>
+    </button>
+  </div>
+</app-modal>
+
+<!-- ================= Category dialog ================= -->
+<app-modal [open]="showCategoryForm" [title]="editingCategory ? 'Edit ' + editingCategory.name : 'New inventory category'" size="sm" [dismissible]="false" (closed)="showCategoryForm = false">
+  <div class="mb-3">
+    <label class="form-label fw-medium required">Name</label>
+    <input class="form-control" maxlength="80" [(ngModel)]="categoryForm.name" />
+  </div>
+  <div class="mb-3">
+    <label class="form-label fw-medium">Parent category</label>
+    <select class="form-select" [(ngModel)]="categoryForm.parentId">
+      <option value="">None (top level)</option>
+      <ng-container *ngFor="let c of categories()">
+        <option *ngIf="c.id !== editingCategory?.id" [value]="c.id">{{ c.name }}</option>
+      </ng-container>
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label fw-medium">Description</label>
+    <textarea class="form-control" rows="2" maxlength="500" [(ngModel)]="categoryForm.description"></textarea>
+  </div>
+  <div>
+    <label class="form-label fw-medium">Sort order</label>
+    <input type="number" class="form-control" [(ngModel)]="categoryForm.sortOrder" />
+  </div>
+  <div *ngIf="categoryError" class="alert alert-danger py-2 px-3 mt-3 mb-0">{{ categoryError }}</div>
+  <ng-container modal-footer>
+    <button type="button" class="btn btn-light border" (click)="showCategoryForm = false" [disabled]="saving">Cancel</button>
+    <button type="button" class="btn btn-primary" (click)="saveCategory()" [disabled]="saving">
+      <span *ngIf="saving" class="spinner-border spinner-border-sm me-2"></span>{{ editingCategory ? 'Save changes' : 'Create category' }}
+    </button>
+  </ng-container>
+</app-modal>

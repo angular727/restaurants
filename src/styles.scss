@@ -1,1 +1,375 @@
-/* You can add global styles to this file, and also import other style files */
+// ---------------------------------------------------------------------------
+// Design tokens → Bootstrap variables. Bootstrap is compiled from source so the
+// whole component library picks up the brand palette, type scale and radii.
+// ---------------------------------------------------------------------------
+$primary: #2b59c3;
+$secondary: #64748b;
+$success: #15803d;
+$info: #0e7490;
+$warning: #b45309;
+$danger: #b91c1c;
+$light: #f1f4f9;
+$dark: #0f172a;
+
+$body-bg: #f4f6fa;
+$body-color: #1e293b;
+$border-color: #e3e8ef;
+$text-muted: #64748b;
+
+$font-family-sans-serif: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+$font-size-base: 0.875rem;
+$font-size-sm: 0.8125rem;
+$headings-font-weight: 600;
+$headings-color: #0f172a;
+
+$border-radius: 0.5rem;
+$border-radius-sm: 0.375rem;
+$border-radius-lg: 0.75rem;
+
+$input-btn-padding-y: 0.5rem;
+$input-btn-padding-x: 0.875rem;
+$input-border-color: #d5dce6;
+$input-focus-border-color: #7b9ae0;
+$input-focus-box-shadow: 0 0 0 0.2rem rgba($primary, 0.15);
+$input-placeholder-color: #94a3b8;
+$btn-font-weight: 500;
+$btn-focus-box-shadow: 0 0 0 0.2rem rgba($primary, 0.2);
+
+$card-border-color: $border-color;
+$card-cap-bg: #fff;
+$card-spacer-y: 1.25rem;
+$card-spacer-x: 1.25rem;
+
+$table-cell-padding-y: 0.75rem;
+$table-cell-padding-x: 1rem;
+$table-th-font-weight: 600;
+$table-border-color: #edf0f5;
+
+$dropdown-border-color: $border-color;
+$dropdown-box-shadow: 0 12px 32px -8px rgba(15, 23, 42, 0.18);
+$dropdown-link-hover-bg: #f1f4f9;
+$dropdown-item-padding-y: 0.5rem;
+
+$badge-font-weight: 600;
+$enable-shadows: false;
+$link-decoration: none;
+
+@import 'bootstrap/scss/bootstrap';
+
+// ---------------------------------------------------------------------------
+// App-wide tokens (used by layout and feature styles)
+// ---------------------------------------------------------------------------
+:root {
+  --app-sidebar-bg: #0f172a;
+  --app-sidebar-width: 260px;
+  --app-sidebar-width-collapsed: 76px;
+  --app-topbar-height: 64px;
+  --app-surface: #ffffff;
+  --app-border: #{$border-color};
+  --app-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --app-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 16px -4px rgba(15, 23, 42, 0.08);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// ---- Cards ----------------------------------------------------------------
+.card {
+  box-shadow: var(--app-shadow-sm);
+}
+
+.card-header {
+  border-bottom-color: var(--app-border);
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.card-title-sm {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0;
+  color: $headings-color;
+}
+
+// ---- Tables ---------------------------------------------------------------
+.table-app {
+  margin: 0;
+
+  > thead th {
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    border-bottom-width: 1px;
+  }
+
+  > tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  > tbody td {
+    vertical-align: middle;
+  }
+}
+
+// ---- Status pills ---------------------------------------------------------
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  background: #f1f5f9;
+  color: #475569;
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.85;
+  }
+
+  &.pill-success { background: #e8f6ee; color: #15803d; }
+  &.pill-warning { background: #fdf3e2; color: #b45309; }
+  &.pill-danger  { background: #fdecec; color: #b91c1c; }
+  &.pill-info    { background: #e6f4f7; color: #0e7490; }
+  &.pill-primary { background: #eaf0fc; color: $primary; }
+  &.pill-neutral { background: #f1f5f9; color: #475569; }
+}
+
+// ---- Small utilities ------------------------------------------------------
+.text-2xs { font-size: 0.6875rem; }
+.text-xs { font-size: 0.75rem; }
+.fw-medium { font-weight: 500; }
+.tabular { font-variant-numeric: tabular-nums; }
+.min-w-0 { min-width: 0; }
+
+.icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 1.125rem;
+  flex-shrink: 0;
+
+  &.tile-primary { background: #eaf0fc; color: $primary; }
+  &.tile-success { background: #e8f6ee; color: $success; }
+  &.tile-warning { background: #fdf3e2; color: $warning; }
+  &.tile-danger  { background: #fdecec; color: $danger; }
+  &.tile-info    { background: #e6f4f7; color: $info; }
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+
+  h1 {
+    font-size: 1.375rem;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    margin: 0.25rem 0 0;
+    color: $text-muted;
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: $text-muted;
+
+  > i {
+    font-size: 2rem;
+    color: #a3b1c6;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+}
+
+.skeleton {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eef1f6 25%, #f6f8fb 37%, #eef1f6 63%);
+  background-size: 400% 100%;
+  animation: skeleton 1.4s ease infinite;
+}
+
+@keyframes skeleton {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+// ---- Printing (receipts) --------------------------------------------------
+.print-only {
+  display: none;
+}
+
+@media print {
+  .sidebar,
+  .topbar,
+  .sidebar-backdrop,
+  .no-print,
+  app-toast-container {
+    display: none !important;
+  }
+
+  .main {
+    margin-left: 0 !important;
+  }
+
+  .content {
+    padding: 0 !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background: #fff;
+  }
+}
+
+// ---- Forms ----------------------------------------------------------------
+.form-label {
+  margin-bottom: 0.375rem;
+}
+
+.required::after {
+  content: ' *';
+  color: #b91c1c;
+}
+
+.section-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin: 1.25rem 0 0.75rem;
+
+  &:first-child {
+    margin-top: 0;
+  }
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.nav-tabs-app {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--app-border);
+  margin-bottom: 1.25rem;
+
+  button,
+  a {
+    border: 0;
+    background: transparent;
+    padding: 0.625rem 0.875rem;
+    color: #64748b;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+
+    &:hover {
+      color: #0f172a;
+    }
+
+    &.active {
+      color: $primary;
+      border-bottom-color: $primary;
+    }
+  }
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--app-border);
+
+  .search {
+    position: relative;
+    flex: 1 1 220px;
+    max-width: 320px;
+
+    i {
+      position: absolute;
+      left: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #94a3b8;
+    }
+
+    .form-control {
+      padding-left: 2.1rem;
+    }
+  }
+}
+
+.row-actions {
+  white-space: nowrap;
+  text-align: right;
+
+  .btn {
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+.text-none {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+// ---- Order line modifier chips (POS customize popup, order detail, kitchen, receipt) --------------
+.modifier-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+
+.modifier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #e8f6ee;
+  color: #15803d;
+  font-size: 0.7rem;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &.remove {
+    background: #fdecec;
+    color: #b91c1c;
+  }
+}

@@ -1,0 +1,220 @@
+<div class="page-header">
+  <div>
+    <h1>{{ greeting() }}</h1>
+    <p>{{ today() }} · Here's what's happening at {{ auth.tenant()?.name }} today.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <button type="button" class="btn btn-light border" (click)="load()" [disabled]="loading()">
+      <i class="bi bi-arrow-clockwise" [class.spin]="loading()"></i>
+      <span class="ms-1">Refresh</span>
+    </button>
+    <a *ngIf="canSeeKitchen()" routerLink="/kitchen" class="btn btn-light border">
+      <i class="bi bi-fire me-1"></i>Kitchen
+    </a>
+    <a *ngIf="canTakeOrders()" routerLink="/pos" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New order
+    </a>
+  </div>
+</div>
+
+<!-- KPI cards -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3" *ngIf="canSeePayments()">
+    <div class="card kpi h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="min-w-0">
+            <div class="kpi-label">Collected today</div>
+            <div *ngIf="!loading(); else kpiSkeleton" class="kpi-value tabular">{{ collectedToday() | money }}</div>
+          </div>
+          <span class="icon-tile tile-success"><i class="bi bi-cash-stack"></i></span>
+        </div>
+        <div class="kpi-foot">{{ paymentCountToday() }} payment{{ paymentCountToday() === 1 ? '' : 's' }} received</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card kpi h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="min-w-0">
+            <div class="kpi-label">Active orders</div>
+            <div *ngIf="!loading(); else kpiSkeleton" class="kpi-value tabular">{{ activeOrderCount() }}</div>
+          </div>
+          <span class="icon-tile tile-primary"><i class="bi bi-receipt"></i></span>
+        </div>
+        <div class="kpi-foot"><span class="tabular">{{ openBalance() | money }}</span> awaiting payment</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card kpi h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="min-w-0">
+            <div class="kpi-label">Table occupancy</div>
+            <div *ngIf="!loading(); else kpiSkeleton" class="kpi-value tabular">
+              {{ occupancyPct() }}<span class="kpi-unit">%</span>
+            </div>
+          </div>
+          <span class="icon-tile tile-info"><i class="bi bi-grid-3x3-gap"></i></span>
+        </div>
+        <div class="kpi-foot">{{ occupiedCount() }} of {{ activeTables().length }} tables occupied</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card kpi h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="min-w-0">
+            <div class="kpi-label">Low-stock items</div>
+            <div *ngIf="!loading(); else kpiSkeleton" class="kpi-value tabular" [class.text-danger]="lowStockCount() > 0">
+              {{ lowStockCount() }}
+            </div>
+          </div>
+          <span class="icon-tile" [ngClass]="lowStockCount() ? 'tile-danger' : 'tile-success'">
+            <i class="bi" [ngClass]="lowStockCount() ? 'bi-exclamation-triangle' : 'bi-check2-circle'"></i>
+          </span>
+        </div>
+        <div class="kpi-foot">{{ lowStockCount() ? 'At or below reorder level' : 'All ingredients above reorder level' }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ng-template #kpiSkeleton><span class="skeleton mt-2" style="height: 30px; width: 110px"></span></ng-template>
+
+<div class="row g-3">
+  <!-- Recent orders -->
+  <div class="col-xl-8">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <div>
+          <h2 class="card-title-sm">Recent orders</h2>
+          <div class="text-muted text-xs mt-1">Latest tickets across dine-in, takeaway and delivery</div>
+        </div>
+        <a routerLink="/orders" class="btn btn-sm btn-light border">View all</a>
+      </div>
+
+      <!-- Status strip -->
+      <div class="status-strip">
+        <div class="strip-item" *ngFor="let s of ordersByStatus()">
+          <span class="text-muted text-xs">{{ s.status | label }}</span>
+          <span class="fw-semibold tabular">{{ loading() ? '–' : s.count }}</span>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-app table-hover">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Type</th>
+              <th class="text-center">Items</th>
+              <th>Status</th>
+              <th>Payment</th>
+              <th class="text-end">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <ng-container *ngIf="loading()">
+              <tr *ngFor="let _ of [1, 2, 3, 4, 5]">
+                <td colspan="6"><span class="skeleton" style="height: 18px"></span></td>
+              </tr>
+            </ng-container>
+
+            <ng-container *ngIf="!loading()">
+              <tr *ngFor="let o of data()?.recentOrders ?? []; trackBy: trackById">
+                <td>
+                  <div class="fw-semibold">{{ o.orderNumber }}</div>
+                  <div class="text-muted text-xs">{{ timeAgo(o.createdAt) }}</div>
+                </td>
+                <td>
+                  <div>{{ o.type | label }}</div>
+                  <div class="text-muted text-xs" *ngIf="tableName(o) as t">Table {{ t }}</div>
+                  <div class="text-muted text-xs" *ngIf="!tableName(o) && o.customer?.name">{{ o.customer?.name }}</div>
+                </td>
+                <td class="text-center tabular">{{ itemCount(o) }}</td>
+                <td><app-status-pill [status]="o.status"></app-status-pill></td>
+                <td><app-status-pill [status]="o.paymentStatus"></app-status-pill></td>
+                <td class="text-end fw-semibold tabular">{{ o.grandTotal | money: o.currency }}</td>
+              </tr>
+              <tr *ngIf="!(data()?.recentOrders?.length)">
+                <td colspan="6">
+                  <div class="empty-state">
+                    <i class="bi bi-receipt"></i>
+                    No orders yet today.
+                  </div>
+                </td>
+              </tr>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-4 d-flex flex-column gap-3">
+    <!-- Floor status -->
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h2 class="card-title-sm">Floor status</h2>
+        <a routerLink="/tables" class="text-xs fw-medium">Open floor plan</a>
+      </div>
+      <div class="card-body">
+        <div *ngIf="loading()" class="skeleton" style="height: 10px"></div>
+        <ng-container *ngIf="!loading()">
+          <div class="stack-bar mb-3" *ngIf="activeTables().length; else noTables">
+            <span
+              *ngFor="let b of tableBreakdown()"
+              [style.width.%]="b.pct"
+              [style.background]="b.color"
+              [attr.title]="(b.status | label) + ': ' + b.count"
+            ></span>
+          </div>
+          <ng-template #noTables><div class="text-muted">No tables set up yet.</div></ng-template>
+          <div class="legend">
+            <div class="legend-item" *ngFor="let b of tableBreakdown()">
+              <span class="dot" [style.background]="b.color"></span>
+              <span class="flex-grow-1">{{ b.status | label }}</span>
+              <span class="fw-semibold tabular">{{ b.count }}</span>
+            </div>
+          </div>
+        </ng-container>
+      </div>
+    </div>
+
+    <!-- Low stock -->
+    <div class="card flex-grow-1">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h2 class="card-title-sm">Low-stock alerts</h2>
+        <a routerLink="/inventory" class="text-xs fw-medium">Inventory</a>
+      </div>
+      <div class="card-body pt-2">
+        <div *ngIf="loading()" class="d-grid gap-2 pt-2">
+          <span class="skeleton" style="height: 36px" *ngFor="let _ of [1, 2, 3]"></span>
+        </div>
+        <ng-container *ngIf="!loading()">
+          <div *ngFor="let item of data()?.lowStock ?? []; trackBy: trackById" class="stock-row">
+            <div class="d-flex justify-content-between gap-2">
+              <span class="fw-medium text-truncate">{{ item.name }}</span>
+              <span class="text-danger fw-semibold tabular text-nowrap">{{ item.currentStock }} {{ item.unit }}</span>
+            </div>
+            <div class="progress mt-2" style="height: 5px">
+              <div class="progress-bar bg-danger" [style.width.%]="stockPct(item)"></div>
+            </div>
+            <div class="text-muted text-xs mt-1">Reorder at {{ item.reorderLevel }} {{ item.unit }}</div>
+          </div>
+          <div *ngIf="!lowStockCount()" class="empty-state py-4">
+            <i class="bi bi-check2-circle text-success"></i>
+            Stock levels look healthy.
+          </div>
+        </ng-container>
+      </div>
+    </div>
+  </div>
+</div>
