@@ -2,6 +2,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ConfirmService } from '../../core/confirm.service';
@@ -139,7 +140,11 @@ export class OrderDetailComponent implements OnInit {
       confirmText: 'Complete order',
     });
     if (!result) return;
-    this.run('complete', this.api.post<ApiItem<Order>>(`/orders/${this.id}/complete`), (o) => `${o.orderNumber} completed`);
+    // completeOrder() requires an order that has been sent at least once (status past 'open').
+    const complete$ = this.api.post<ApiItem<Order>>(`/orders/${this.id}/complete`);
+    const request$ =
+      this.order()?.status === 'open' ? this.api.post(`/orders/${this.id}/send`).pipe(switchMap(() => complete$)) : complete$;
+    this.run('complete', request$, (o) => `${o.orderNumber} completed`);
   }
 
   async cancelOrder(): Promise<void> {

@@ -180,23 +180,14 @@ export class PosComponent implements OnInit {
     };
   });
 
-  /** Ids of open orders that still owe money; a fully paid order no longer counts as "running". */
-  private readonly unpaidOrderIds = signal<Set<string>>(new Set());
-
-  readonly runningTables = computed(() =>
-    this.tables().filter((t) => t.isActive && !!t.currentOrderId && this.unpaidOrderIds().has(t.currentOrderId))
-  );
-
-  private loadRunningOrders(): void {
-    forkJoin(['open', 'in_progress', 'ready', 'served'].map((status) => this.api.get<ApiList<Order>>('/orders', { status, limit: 100 }))).subscribe({
-      next: (groups) =>
-        this.unpaidOrderIds.set(new Set(groups.flatMap((g) => g.data).filter((o) => o.paymentStatus !== 'paid').map((o) => o.id))),
-    });
-  }
+  /** A table is "running" whenever it has an open order, whatever its payment state. Paying it
+   *  off fully auto-completes the order (see onPaid below), which clears currentOrderId and drops
+   *  the table off this list on its own — so no separate "is it paid" check is needed here, and a
+   *  table can never get stuck invisible just because it was paid through a different screen. */
+  readonly runningTables = computed(() => this.tables().filter((t) => t.isActive && !!t.currentOrderId));
 
   private reloadTables(): void {
     this.api.getAll<Table>('/tables', { isActive: true }).subscribe((t) => this.tables.set(t));
-    this.loadRunningOrders();
   }
 
   readonly itemCount = computed(() => this.cart().reduce((n, l) => n + l.quantity, 0));
@@ -247,7 +238,6 @@ export class PosComponent implements OnInit {
         this.categories.set(categories);
         this.items.set(items);
         this.tables.set(tables);
-        this.loadRunningOrders();
         this.invItems.set(invItems);
         if (tableId && this.freeTables().some((t) => t.id === tableId)) {
           this.orderType = 'dine_in';
@@ -264,9 +254,15 @@ export class PosComponent implements OnInit {
     if (orderId) this.loadExisting(orderId, true);
   }
 
+  /** Shown as a soft overlay on the order panel while a table switch fetches its order, instead
+   *  of flashing to an empty "no items" state and then popping the real content in. */
+  readonly loadingOrder = signal(false);
+
   private loadExisting(orderId: string, leaveIfClosed: boolean): void {
+    this.loadingOrder.set(true);
     this.api.get<ApiItem<Order>>(`/orders/${orderId}`).subscribe({
       next: (res) => {
+        this.loadingOrder.set(false);
         if (['completed', 'cancelled'].includes(res.data.status)) {
           this.toast.error(`Order ${res.data.orderNumber} is ${res.data.status} and can't be changed.`);
           if (leaveIfClosed) this.router.navigate(['/orders', orderId]);
@@ -275,9 +271,10 @@ export class PosComponent implements OnInit {
         }
         this.existingOrder.set(res.data);
         this.orderDiscount.set(null);
-        this.discountDraft =res.data.orderDiscount ? fromCents(res.data.orderDiscount) : null;
+        this.discountDraft = res.data.orderDiscount ? fromCents(res.data.orderDiscount) : null;
       },
       error: (err) => {
+        this.loadingOrder.set(false);
         this.toast.apiError(err, 'Order not found');
         this.tableId = '';
       },
@@ -286,6 +283,58 @@ export class PosComponent implements OnInit {
 
   canTill(): boolean {
     return this.auth.hasRole('manager', 'cashier');
+  }
+
+  // ---- Header fields: same controls for a new order and a running one. Waiter and Table were
+  // already live-editable on a running order; guestCount/source now go through PATCH .../details
+  // (added for this). Order type itself stays fixed once an order exists — changing it would mean
+  // releasing/occupying a table and a different service charge rate, out of scope here.
+  savingDetails = false;
+
+  currentOrderType(): OrderType {
+    return (this.existingOrder()?.type as OrderType) ?? this.orderType;
+  }
+
+  currentWaiterId(): string {
+    const eo = this.existingOrder();
+    return eo ? this.directory.waiterOf(eo) ?? '' : this.waiterId;
+  }
+
+  setWaiterField(id: string): void {
+    if (this.existingOrder()) this.changeWaiter(id);
+    else this.waiterId = id;
+  }
+
+  currentGuestCount(): number {
+    return this.existingOrder()?.guestCount ?? this.guestCount;
+  }
+
+  setGuestsField(n: number): void {
+    if (this.existingOrder()) this.updateOrderDetails({ guestCount: n });
+    else this.guestCount = n;
+  }
+
+  currentSource(): string {
+    return this.existingOrder()?.source ?? this.source;
+  }
+
+  setSourceField(s: string): void {
+    if (this.existingOrder()) this.updateOrderDetails({ source: s });
+    else this.source = s;
+  }
+
+  private async updateOrderDetails(patch: { guestCount?: number; source?: string }): Promise<void> {
+    const eo = this.existingOrder();
+    if (!eo) return;
+    this.savingDetails = true;
+    try {
+      const res = await firstValueFrom(this.api.patch<ApiItem<Order>>(`/orders/${eo.id}/details`, patch));
+      this.existingOrder.set(res.data);
+    } catch (err) {
+      this.toast.apiError(err);
+    } finally {
+      this.savingDetails = false;
+    }
   }
 
   cancellingLine: string | null = null;
@@ -373,7 +422,6 @@ export class PosComponent implements OnInit {
     this.toast.success('Payment recorded');
     if ((order.balanceDue ?? 0) > 0) {
       this.loadExisting(order.id, false);
-      this.loadRunningOrders();
       return;
     }
     // Fully paid: close the order so its table is free for the next guests.
@@ -400,6 +448,8 @@ export class PosComponent implements OnInit {
     if (!result) return;
     this.completing = true;
     try {
+      // completeOrder() requires an order that has been sent at least once (status past 'open').
+      if (eo.status === 'open') await firstValueFrom(this.api.post(`/orders/${eo.id}/send`));
       const res = await firstValueFrom(this.api.post<ApiItem<Order>>(`/orders/${eo.id}/complete`));
       this.toast.success(`${res.data.orderNumber} completed`);
       this.startNewOrder();
@@ -415,6 +465,28 @@ export class PosComponent implements OnInit {
   startNewOrder(): void {
     this.existingOrder.set(null);
     this.tableId = '';
+  }
+
+  /** Table dropdown inside a running order: leaves this order and opens the chosen table (its
+   *  running order if it has one, otherwise a fresh dine-in order there). Keeps the current order
+   *  on screen (behind a loading overlay) until the new one arrives, rather than clearing it first
+   *  and popping the new content in a moment later. */
+  switchTable(tableId: string): void {
+    const currentId = this.tables().find((t) => t.currentOrderId === this.existingOrder()?.id)?.id;
+    if (tableId === currentId) return;
+    this.orderType = 'dine_in';
+    this.cart.set([]);
+    this.orderDiscount.set(null);
+    const running = tableId ? this.tables().find((t) => t.id === tableId)?.currentOrderId : null;
+    if (running) {
+      this.tableId = tableId;
+      this.loadExisting(running, false);
+      return;
+    }
+    this.existingOrder.set(null);
+    this.tableId = tableId;
+    const assigned = tableId ? this.tables().find((t) => t.id === tableId)?.assignedWaiterId : undefined;
+    if (assigned) this.waiterId = assigned;
   }
 
   /** Picking a table selects its assigned waiter (still changeable); a table with a running order opens that order. */

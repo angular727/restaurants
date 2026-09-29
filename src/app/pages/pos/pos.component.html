@@ -86,114 +86,129 @@
       (pointerdown)="startResize($event)"
       (dblclick)="orderWidth.set(defaultOrderWidth); saveOrderWidth()"
     ></div>
+    <div class="order-loading-overlay" *ngIf="loadingOrder()">
+      <div class="order-loading-mark">
+        <svg viewBox="0 0 32 32" width="22" height="22" fill="currentColor">
+          <path d="M11.2 7c.44 0 .8.36.8.8v6.4a2.4 2.4 0 0 1-1.6 2.264V24.2a.8.8 0 0 1-1.6 0v-7.736A2.4 2.4 0 0 1 7.2 14.2V7.8a.8.8 0 0 1 1.6 0v5.6h.8V7.8a.8.8 0 0 1 1.6 0v5.6h.8V7.8c0-.44.36-.8.8-.8Z"/>
+          <path d="M22.2 7c.44 0 .8.36.8.8v6.75c0 1.36-.86 2.52-2.07 2.96V24.2a.8.8 0 0 1-1.6 0v-6.69C18.13 17.07 17.27 15.91 17.27 14.55c0-2.7 1.6-6.75 3.93-7.5.34-.11.7.03.9.32.13.19.1.44-.06.6-1.23 1.24-2.27 3.66-2.27 5.68 0 1.02.63 1.9 1.53 2.26V7.8c0-.44.36-.8.8-.8Z"/>
+        </svg>
+      </div>
+      <div class="order-loading-text">Loading order…</div>
+    </div>
     <div class="order-head">
-      <ng-container *ngIf="existingOrder() as o; else newOrderHead">
-        <div class="d-flex align-items-center justify-content-between gap-2">
-          <div class="min-w-0">
-            <div class="text-muted text-xs">Adding items to</div>
-            <div class="fw-semibold fs-6">
-              {{ o.orderNumber }}
-              <span *ngIf="existingTableName()" class="text-muted fw-normal"> · Table {{ existingTableName() }}</span>
-            </div>
-            <div *ngIf="!canTill()" class="text-muted text-xs"><i class="bi bi-person me-1"></i>Waiter {{ directory.name(directory.waiterOf(o)) }}</div>
-            <div *ngIf="canTill()" class="d-flex align-items-center gap-1 mt-1">
-              <i class="bi bi-person text-muted"></i>
-              <select
-                class="form-select form-select-sm py-0"
-                [disabled]="changingWaiter"
-                [ngModel]="directory.waiterOf(o)"
-                (ngModelChange)="changeWaiter($event)"
-                aria-label="Waiter"
-              >
-                <option *ngFor="let s of directory.servers()" [value]="s.userId">{{ s.name }}</option>
-              </select>
-            </div>
-          </div>
-          <div class="d-flex flex-column gap-1 text-nowrap">
-            <a [routerLink]="['/orders', o.id]" class="btn btn-sm btn-light border">View order / Payment</a>
-            <button type="button" class="btn btn-sm btn-link p-0" (click)="startNewOrder()">Start a new order</button>
-          </div>
+      <div *ngIf="existingOrder() as o" class="d-flex align-items-center justify-content-between gap-2 mb-2">
+        <div class="min-w-0">
+          <div class="text-muted text-xs">Adding items to</div>
+          <div class="fw-semibold fs-6">{{ o.orderNumber }}</div>
         </div>
-      </ng-container>
+        <div class="d-flex flex-column gap-1 text-nowrap">
+          <a [routerLink]="['/orders', o.id]" class="btn btn-sm btn-light border">View order / Payment</a>
+          <button type="button" class="btn btn-sm btn-link p-0" (click)="startNewOrder()">Start a new order</button>
+        </div>
+      </div>
 
-      <ng-template #newOrderHead>
-        <div class="waiter-bar">
-          <i class="bi bi-person-badge"></i>
-          <label for="pos-waiter" class="mb-0 text-nowrap">Waiter</label>
-          <select id="pos-waiter" class="form-select form-select-sm" [(ngModel)]="waiterId">
-            <option *ngFor="let s of directory.servers()" [value]="s.userId">
-              {{ s.name }}{{ directory.isMe(s.userId) ? ' (you)' : '' }} · {{ s.role | label }}
+      <div class="waiter-bar">
+        <i class="bi bi-person-badge"></i>
+        <label for="pos-waiter" class="mb-0 text-nowrap">Waiter</label>
+        <select
+          id="pos-waiter"
+          class="form-select form-select-sm"
+          [disabled]="changingWaiter"
+          [ngModel]="currentWaiterId()"
+          (ngModelChange)="setWaiterField($event)"
+        >
+          <option *ngFor="let s of directory.servers()" [value]="s.userId">
+            {{ s.name }}{{ directory.isMe(s.userId) ? ' (you)' : '' }} · {{ s.role | label }}
+          </option>
+          <option *ngIf="!directory.servers().length" [value]="auth.user()?.id">{{ auth.user()?.name }} (you)</option>
+        </select>
+      </div>
+
+      <div class="segmented" [class.readonly]="!!existingOrder()" [attr.title]="existingOrder() ? 'Order type is set when the order is created' : null">
+        <button
+          type="button"
+          *ngFor="let t of orderTypes"
+          [class.active]="currentOrderType() === t.value"
+          [disabled]="!!existingOrder()"
+          (click)="orderType = t.value"
+        >
+          <i class="bi {{ t.icon }}"></i> {{ t.label }}
+        </button>
+      </div>
+
+      <div class="row g-2 mt-1" *ngIf="currentOrderType() === 'dine_in'">
+        <div class="col-8">
+          <label class="form-label text-xs text-muted mb-1">Table</label>
+          <select
+            class="form-select form-select-sm"
+            [ngModel]="tableId"
+            (ngModelChange)="existingOrder() ? switchTable($event) : onTableChange($event)"
+          >
+            <option value="">No table (counter)</option>
+            <option *ngFor="let t of freeTables(); trackBy: trackById" [value]="t.id">
+              {{ t.name }} · {{ t.section }} · {{ t.capacity }} seats{{ t.status === 'reserved' ? ' (reserved)' : '' }}{{ tableWaiterName(t) }}
             </option>
-            <option *ngIf="!directory.servers().length" [value]="auth.user()?.id">{{ auth.user()?.name }} (you)</option>
+            <optgroup label="Running orders" *ngIf="runningTables().length">
+              <option *ngFor="let t of runningTables(); trackBy: trackById" [value]="t.id">
+                {{ t.name }} · {{ t.section }} · order running
+              </option>
+            </optgroup>
           </select>
         </div>
-        <div class="segmented">
-          <button
-            type="button"
-            *ngFor="let t of orderTypes"
-            [class.active]="orderType === t.value"
-            (click)="orderType = t.value"
-          >
-            <i class="bi {{ t.icon }}"></i> {{ t.label }}
-          </button>
+        <div class="col-4">
+          <label class="form-label text-xs text-muted mb-1">Guests</label>
+          <input
+            type="number"
+            class="form-control form-control-sm"
+            min="1"
+            max="500"
+            [disabled]="savingDetails"
+            [ngModel]="currentGuestCount()"
+            (ngModelChange)="setGuestsField($event)"
+          />
         </div>
+      </div>
 
-        <div class="row g-2 mt-1" *ngIf="orderType === 'dine_in'">
-          <div class="col-8">
-            <label class="form-label text-xs text-muted mb-1">Table</label>
-            <select class="form-select form-select-sm" [ngModel]="tableId" (ngModelChange)="onTableChange($event)">
-              <option value="">No table (counter)</option>
-              <option *ngFor="let t of freeTables(); trackBy: trackById" [value]="t.id">
-                {{ t.name }} · {{ t.section }} · {{ t.capacity }} seats{{ t.status === 'reserved' ? ' (reserved)' : '' }}{{ tableWaiterName(t) }}
-              </option>
-              <optgroup label="Running orders" *ngIf="runningTables().length">
-                <option *ngFor="let t of runningTables(); trackBy: trackById" [value]="t.id">
-                  {{ t.name }} · {{ t.section }} · order running
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="col-4">
-            <label class="form-label text-xs text-muted mb-1">Guests</label>
-            <input type="number" class="form-control form-control-sm" min="1" max="500" [(ngModel)]="guestCount" />
-          </div>
+      <div class="row g-2 mt-1" *ngIf="currentOrderType() !== 'dine_in' && !existingOrder()">
+        <div class="col-6">
+          <label class="form-label text-xs text-muted mb-1">Customer name</label>
+          <input class="form-control form-control-sm" maxlength="120" [(ngModel)]="customerName" placeholder="Optional" />
         </div>
-
-        <div class="row g-2 mt-1" *ngIf="orderType !== 'dine_in'">
-          <div class="col-6">
-            <label class="form-label text-xs text-muted mb-1">Customer name</label>
-            <input class="form-control form-control-sm" maxlength="120" [(ngModel)]="customerName" placeholder="Optional" />
+        <div class="col-6">
+          <label class="form-label text-xs text-muted mb-1">Phone</label>
+          <input class="form-control form-control-sm" maxlength="30" [(ngModel)]="customerPhone" placeholder="Optional" />
+        </div>
+        <div class="col-12">
+          <input type="email" class="form-control form-control-sm" maxlength="254" [(ngModel)]="customerEmail" placeholder="Email for receipt (optional)" />
+        </div>
+        <ng-container *ngIf="orderType === 'delivery'">
+          <div class="col-12">
+            <input class="form-control form-control-sm" [(ngModel)]="addressLine1" placeholder="Delivery address" />
           </div>
-          <div class="col-6">
-            <label class="form-label text-xs text-muted mb-1">Phone</label>
-            <input class="form-control form-control-sm" maxlength="30" [(ngModel)]="customerPhone" placeholder="Optional" />
+          <div class="col-7">
+            <input class="form-control form-control-sm" [(ngModel)]="addressCity" placeholder="City" />
+          </div>
+          <div class="col-5">
+            <input class="form-control form-control-sm" [(ngModel)]="addressPostalCode" placeholder="Postal code" />
           </div>
           <div class="col-12">
-            <input type="email" class="form-control form-control-sm" maxlength="254" [(ngModel)]="customerEmail" placeholder="Email for receipt (optional)" />
+            <input class="form-control form-control-sm" maxlength="500" [(ngModel)]="deliveryNotes" placeholder="Delivery notes (gate code, floor…)" />
           </div>
-          <ng-container *ngIf="orderType === 'delivery'">
-            <div class="col-12">
-              <input class="form-control form-control-sm" [(ngModel)]="addressLine1" placeholder="Delivery address" />
-            </div>
-            <div class="col-7">
-              <input class="form-control form-control-sm" [(ngModel)]="addressCity" placeholder="City" />
-            </div>
-            <div class="col-5">
-              <input class="form-control form-control-sm" [(ngModel)]="addressPostalCode" placeholder="Postal code" />
-            </div>
-            <div class="col-12">
-              <input class="form-control form-control-sm" maxlength="500" [(ngModel)]="deliveryNotes" placeholder="Delivery notes (gate code, floor…)" />
-            </div>
-          </ng-container>
-        </div>
+        </ng-container>
+      </div>
 
-        <div class="d-flex align-items-center gap-2 mt-2">
-          <label class="text-xs text-muted text-nowrap mb-0" for="pos-source">Order source</label>
-          <select id="pos-source" class="form-select form-select-sm" [(ngModel)]="source">
-            <option *ngFor="let s of sources" [value]="s">{{ s === 'pos' ? 'Counter / POS' : s === 'qr' ? 'QR code' : (s | label) }}</option>
-          </select>
-        </div>
-      </ng-template>
+      <div class="d-flex align-items-center gap-2 mt-2">
+        <label class="text-xs text-muted text-nowrap mb-0" for="pos-source">Order source</label>
+        <select
+          id="pos-source"
+          class="form-select form-select-sm"
+          [disabled]="savingDetails"
+          [ngModel]="currentSource()"
+          (ngModelChange)="setSourceField($event)"
+        >
+          <option *ngFor="let s of sources" [value]="s">{{ s === 'pos' ? 'Counter / POS' : (s | label) }}</option>
+        </select>
+      </div>
     </div>
 
     <!-- Cart -->
@@ -386,7 +401,7 @@
             <i class="bi bi-credit-card me-1"></i>Take payment
           </button>
           <button
-            *ngIf="!((eo.balanceDue ?? 0) > 0) && eo.status !== 'open'"
+            *ngIf="!((eo.balanceDue ?? 0) > 0)"
             type="button"
             class="btn btn-sm btn-dark text-nowrap"
             [disabled]="completing"

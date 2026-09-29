@@ -124,6 +124,16 @@
   color: #64748b;
 }
 
+.brand-foot-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: #9db4ea;
+  }
+}
+
 .form-panel {
   flex: 1;
   display: flex;
