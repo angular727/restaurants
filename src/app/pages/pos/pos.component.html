@@ -348,7 +348,8 @@
                   placeholder="0"
                   [disabled]="!canTill() || applyingDiscount"
                   [(ngModel)]="discountDraft"
-                  (keydown.enter)="applyOrderDiscount()"
+                  (focus)="$any($event.target).select()"
+                  (keydown.enter)="$any($event.target).blur()"
                   (change)="applyOrderDiscount()"
                   aria-label="Order discount"
                 />

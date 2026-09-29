@@ -314,6 +314,11 @@
 
 .discount-input {
   width: 170px;
+
+  .form-control:not(:disabled) {
+    background: #fff;
+    border-color: #9db4ea;
+  }
 }
 
 .pay-box {

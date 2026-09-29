@@ -346,7 +346,7 @@ export class PosComponent implements OnInit {
 
   async applyOrderDiscount(): Promise<void> {
     const eo = this.existingOrder();
-    if (!eo || !this.discountChanged()) return;
+    if (!eo || this.applyingDiscount || !this.discountChanged()) return;
     // The server refuses a discount above the order total, so cap it here instead of failing.
     const room = Math.max(0, eo.subtotal - (eo.discountTotal - (eo.orderDiscount ?? 0)));
     const wanted = toCents(this.discountDraft);

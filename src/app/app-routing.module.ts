@@ -20,19 +20,19 @@ const routes: Routes = [
   {
     path: 'login',
     canActivate: [guestGuard],
-    title: 'Sign in · Restaurant OS',
+    title: 'Sign in · Restaurant',
     loadComponent: () => import('./pages/login/login.component').then((m) => m.LoginComponent),
   },
   {
     path: 'register',
     canActivate: [guestGuard],
-    title: 'Create restaurant · Restaurant OS',
+    title: 'Create restaurant · Restaurant',
     loadComponent: () => import('./pages/register/register.component').then((m) => m.RegisterComponent),
   },
   {
     path: 'select-restaurant',
     canActivate: [authGuard],
-    title: 'Choose restaurant · Restaurant OS',
+    title: 'Choose restaurant · Restaurant',
     loadComponent: () =>
       import('./pages/select-restaurant/select-restaurant.component').then((m) => m.SelectRestaurantComponent),
   },
@@ -70,7 +70,7 @@ const routes: Routes = [
   },
   {
     path: '**',
-    title: 'Not found · Restaurant OS',
+    title: 'Not found · Restaurant',
     loadComponent: () => import('./pages/not-found.component').then((m) => m.NotFoundComponent),
   },
 ];

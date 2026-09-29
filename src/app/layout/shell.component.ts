@@ -26,6 +26,11 @@ export class ShellComponent {
   private toast = inject(ToastService);
 
   readonly appName = environment.appName;
+
+  /** Sidebar/menu role label: spells out "Restaurant Owner" for the owner role, others unchanged. */
+  roleLabel(role: string | null | undefined): string {
+    return role === 'owner' ? 'Restaurant Owner' : role ?? '';
+  }
   readonly collapsed = signal(readCollapsed());
   readonly mobileOpen = signal(false);
   readonly pageTitle = signal('');
