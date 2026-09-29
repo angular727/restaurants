@@ -253,7 +253,11 @@ export class ReportsComponent implements OnInit {
         if (l.status === 'cancelled' || !this.linePasses(l, f)) continue;
         const id = String(l.menuItemId);
         const menu = this.menuItems().find((m) => m.id === id);
-        const discount = Math.min(l.discountAmount ?? 0, l.lineSubtotal);
+        // Derived from lineTotal/taxAmount (both authoritative, server-computed), not from
+        // discountAmount alone — a whole-order discount is spread across lines by the server and
+        // only shows up in lineTotal, so recomputing net from discountAmount alone undercounts it.
+        const net = l.lineTotal - l.taxAmount;
+        const discount = l.lineSubtotal - net;
         const cost = (l.inventoryConsumed ?? []).reduce(
           (s, c) => s + c.quantity * (costs.get(`${o.id}|${c.inventoryItemId}`) ?? avg.get(String(c.inventoryItemId)) ?? 0),
           0
@@ -277,7 +281,7 @@ export class ReportsComponent implements OnInit {
           price: l.unitPrice,
           gross: l.lineSubtotal,
           discount,
-          net: l.lineSubtotal - discount,
+          net,
           tax: l.taxAmount,
           total: l.lineTotal,
           cost: Math.round(cost),
