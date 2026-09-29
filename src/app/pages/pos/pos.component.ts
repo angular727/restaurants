@@ -258,6 +258,13 @@ export class PosComponent implements OnInit {
    *  of flashing to an empty "no items" state and then popping the real content in. */
   readonly loadingOrder = signal(false);
 
+  /** Puts a freshly-fetched order (from any endpoint that returns one) into view. */
+  private applyOrder(order: Order): void {
+    this.existingOrder.set(order);
+    this.orderDiscount.set(null);
+    this.discountDraft = order.orderDiscount ? fromCents(order.orderDiscount) : null;
+  }
+
   private loadExisting(orderId: string, leaveIfClosed: boolean): void {
     this.loadingOrder.set(true);
     this.api.get<ApiItem<Order>>(`/orders/${orderId}`).subscribe({
@@ -269,9 +276,7 @@ export class PosComponent implements OnInit {
           else this.tableId = '';
           return;
         }
-        this.existingOrder.set(res.data);
-        this.orderDiscount.set(null);
-        this.discountDraft = res.data.orderDiscount ? fromCents(res.data.orderDiscount) : null;
+        this.applyOrder(res.data);
       },
       error: (err) => {
         this.loadingOrder.set(false);
@@ -357,11 +362,14 @@ export class PosComponent implements OnInit {
     if (!result) return;
     this.cancellingLine = line.id;
     try {
-      await firstValueFrom(
-        this.api.post(`/orders/${eo.id}/items/${line.id}/cancel`, { reason: result.reason || undefined, returnToStock: result.checked })
+      // The cancel response already carries the updated order — apply it directly instead of a
+      // second round-trip to re-fetch (and without popping the full "loading order" overlay,
+      // which is for switching to a different order, not a quick edit on this one).
+      const res = await firstValueFrom(
+        this.api.post<ApiItem<Order>>(`/orders/${eo.id}/items/${line.id}/cancel`, { reason: result.reason || undefined, returnToStock: result.checked })
       );
+      this.existingOrder.set(res.data);
       this.toast.success(`${line.name} cancelled`);
-      this.loadExisting(eo.id, false);
     } catch (err) {
       this.toast.apiError(err);
     } finally {
@@ -374,9 +382,9 @@ export class PosComponent implements OnInit {
     if (!eo || !waiterId || waiterId === this.directory.waiterOf(eo)) return;
     this.changingWaiter = true;
     try {
-      await firstValueFrom(this.api.patch(`/orders/${eo.id}/waiter`, { waiterId }));
+      const res = await firstValueFrom(this.api.patch<ApiItem<Order>>(`/orders/${eo.id}/waiter`, { waiterId }));
+      this.existingOrder.set(res.data);
       this.toast.success(`Waiter changed to ${this.directory.name(waiterId)}`);
-      this.loadExisting(eo.id, false);
     } catch (err) {
       this.toast.apiError(err);
     } finally {
@@ -396,20 +404,16 @@ export class PosComponent implements OnInit {
   async applyOrderDiscount(): Promise<void> {
     const eo = this.existingOrder();
     if (!eo || this.applyingDiscount || !this.discountChanged()) return;
-    // The server refuses a discount above the order total, so cap it here instead of failing.
-    const room = Math.max(0, eo.subtotal - (eo.discountTotal - (eo.orderDiscount ?? 0)));
-    const wanted = toCents(this.discountDraft);
-    const amount = Math.min(wanted, room);
-    if (amount < wanted) {
-      this.discountDraft = fromCents(amount);
-      this.toast.info(`Discount limited to the order total (${(this.discountDraft ?? 0).toFixed(2)})`);
-    }
-    if (amount === (eo.orderDiscount ?? 0)) return;
+    // Whatever the user types goes straight to the server, uncapped — recalculateTotals() there
+    // already clamps the discount actually applied to the order's value, so the total can never
+    // go negative no matter how large this number is.
+    const amount = toCents(this.discountDraft);
     this.applyingDiscount = true;
     try {
-      await firstValueFrom(this.api.patch(`/orders/${eo.id}/discount`, { amount }));
+      const res = await firstValueFrom(this.api.patch<ApiItem<Order>>(`/orders/${eo.id}/discount`, { amount }));
+      this.existingOrder.set(res.data);
+      this.discountDraft = res.data.orderDiscount ? fromCents(res.data.orderDiscount) : null;
       this.toast.success(amount ? 'Discount applied' : 'Discount removed');
-      this.loadExisting(eo.id, false);
     } catch (err) {
       this.toast.apiError(err);
     } finally {
@@ -421,7 +425,8 @@ export class PosComponent implements OnInit {
     this.showPayment = false;
     this.toast.success('Payment recorded');
     if ((order.balanceDue ?? 0) > 0) {
-      this.loadExisting(order.id, false);
+      // The payment response already carries the updated order — no need to re-fetch it.
+      this.existingOrder.set(order);
       return;
     }
     // Fully paid: close the order so its table is free for the next guests.
@@ -799,10 +804,11 @@ export class PosComponent implements OnInit {
       } else {
         this.toast.success(existing ? `Items added to ${order.orderNumber}` : `${order.orderNumber} saved`);
       }
-      this.orderDiscount.set(null);
       this.cart.set([]);
-      // Stay on the POS: the order (new or existing) now shows as the running order with its items.
-      this.loadExisting(order.id, false);
+      // Stay on the POS: the order (new or existing) now shows as the running order with its
+      // items. The create/add-items/send calls above already returned the fresh order, so apply
+      // it directly rather than spending another round trip re-fetching the same thing.
+      this.applyOrder(order);
       this.reloadTables();
     } catch (err) {
       this.toast.apiError(err, 'Could not save the order');

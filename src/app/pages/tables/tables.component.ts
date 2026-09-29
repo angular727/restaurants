@@ -145,7 +145,9 @@ export class TablesComponent implements OnInit {
 
   onTableClick(t: Table): void {
     if (t.currentOrderId) {
-      this.router.navigate(['/orders', t.currentOrderId]);
+      // Open it in the POS running-order view (add items, change waiter/guests, take payment),
+      // the same screen a waiter already works from — not the read-only Order Detail page.
+      this.router.navigate(['/pos'], { queryParams: { orderId: t.currentOrderId } });
     } else if (this.canTakeOrders() && t.isActive && (t.status === 'available' || t.status === 'reserved')) {
       this.router.navigate(['/pos'], { queryParams: { tableId: t.id } });
     }
