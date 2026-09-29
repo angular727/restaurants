@@ -88,7 +88,10 @@ export class TablesComponent implements OnInit {
       w = Math.max(w, p.x + TILE_W + 40);
       h = Math.max(h, p.y + TILE_H + 40);
     }
-    return { w: Math.max(w, 900), h: Math.max(h, 480) };
+    // No hardcoded width floor: CSS min-width:100% already fills the available space, and
+    // forcing a fixed minimum (e.g. 900px) caused a needless horizontal scrollbar on narrower
+    // screens even though nothing was actually placed out there.
+    return { w, h: Math.max(h, 480) };
   });
 
   editing: Table | null = null;
